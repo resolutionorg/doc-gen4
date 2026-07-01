@@ -22,6 +22,23 @@ def runSingleCmd (p : Parsed) : IO UInt32 := do
   updateModuleDb builtinDocstringValues doc buildDir dbFile (some sourceUri)
   return 0
 
+/--
+timaeus fork: ingest MANY modules into an existing DB in a single environment
+load (one `importModules`, then analyze each listed module). This is how a
+repo's own modules are added on top of a shared Mathlib-only base DB without
+re-ingesting Mathlib. Each module's GitHub blob URL is derived from `--source-base`.
+-/
+def runIngestCmd (p : Parsed) : IO UInt32 := do
+  let buildDir := match p.flag? "build" with
+    | some dir => dir.as! String
+    | none => ".lake/build"
+  let dbFile := p.positionalArg! "db" |>.as! String
+  let sourceBase := (p.flag? "source-base").map (·.as! String)
+  let modules := (p.variableArgsAs! String).map String.toName
+  let doc ← load <| .analyzeConcreteModules modules
+  updateModuleDb builtinDocstringValues doc buildDir dbFile none (sourceBase? := sourceBase)
+  return 0
+
 def runGenCoreCmd (p : Parsed) : IO UInt32 := do
   let buildDir := match p.flag? "build" with
     | some dir => dir.as! String
@@ -89,11 +106,24 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
   let linkCtx ← db.loadLinkingContext
 
   -- Determine which modules to generate HTML for
-  let targetModules ←
+  let targetModulesAll ←
     if moduleRoots.isEmpty then
       pure linkCtx.moduleNames
     else
       db.getTransitiveImports moduleRoots
+  -- timaeus fork: when DOCGEN_LOCAL_ROOTS is set, only emit HTML (and search
+  -- index entries) for modules whose top-level root is in the allowlist. The
+  -- linking context still covers every module, so cross-references resolve;
+  -- links to non-local modules are redirected by moduleNameToLink via
+  -- DOCGEN_EXTERNAL_BASE. This is what trims a Mathlib-importing project's docs
+  -- from hundreds of thousands of files down to just the project's own modules.
+  let localRoots ← readLocalRoots
+  let targetModules ←
+    if localRoots.isEmpty then pure targetModulesAll
+    else
+      let kept := targetModulesAll.filter (fun m => localRoots.contains m.getRoot)
+      IO.println s!"timaeus: emitting {kept.size}/{targetModulesAll.size} modules (roots: {localRoots})"
+      pure kept
 
   let baseConfig ← getSimpleBaseContext buildDir (Hierarchy.fromArray targetModules)
   -- Add `references` pseudo-module to hierarchy only when bibliography data exists
@@ -157,6 +187,19 @@ def singleCmd := `[Cli|
     sourceUri : String; "The sourceUri as computed by the Lake facet"
 ]
 
+def ingestCmd := `[Cli|
+  ingest VIA runIngestCmd;
+  "Ingest many modules into an existing DB in one environment load (timaeus fork)."
+
+  FLAGS:
+    b, build : String; "Build directory."
+    s, "source-base" : String; "Base GitHub blob URL, e.g. https://github.com/OWNER/REPO/blob/SHA/"
+
+  ARGS:
+    db : String; "Path to the SQLite database (relative to build dir)"
+    ...modules : String; "The modules to ingest."
+]
+
 def genCoreCmd := `[Cli|
   genCore VIA runGenCoreCmd;
   "Populate the database with documentation for the specified Lean core module (Init, Std, Lake, Lean)."
@@ -212,6 +255,7 @@ def docGenCmd : Cmd := `[Cli|
 
   SUBCOMMANDS:
     singleCmd;
+    ingestCmd;
     genCoreCmd;
     bibPrepassCmd;
     headerDataCmd;

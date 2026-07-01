@@ -500,10 +500,15 @@ end DB
 open DB
 
 
+-- timaeus fork: `sourceBase?`, when set, is a GitHub blob base URL from which a
+-- per-module source URL is derived (used by the `ingest` command to add many
+-- modules in one env load, each with its own URL). It takes precedence over the
+-- single `sourceUrl?`.
 def updateModuleDb (values : DocstringValues)
     (doc : Process.AnalyzerResult)
     (buildDir : System.FilePath) (dbFile : String)
-    (sourceUrl? : Option String) : IO Unit := do
+    (sourceUrl? : Option String)
+    (sourceBase? : Option String := none) : IO Unit := do
   let dbFile := buildDir / dbFile
   DBM.run values dbFile <| withDB fun db => do
     for batch in chunked doc.moduleInfo.toArray 100 do
@@ -518,8 +523,13 @@ def updateModuleDb (values : DocstringValues)
           let modNameStr := modName.toString
           -- Collect structure field info to save in second pass (after all declarations are in name_info)
           let mut pendingStructureFields : Array (Int64 × Process.StructureInfo) := #[]
+          let url? := match sourceBase? with
+            | some base =>
+              let path := "/".intercalate (modName.components.map (fun c => c.toString (escape := false)))
+              some ((if base.endsWith "/" then base else base ++ "/") ++ path ++ ".lean")
+            | none => sourceUrl?
           db.deleteModule modNameStr
-          db.saveModule modNameStr sourceUrl?
+          db.saveModule modNameStr url?
           for imported in modInfo.imports do
             db.saveImport modNameStr imported
           -- Position counter: each item gets a unique sequential position within the module.
