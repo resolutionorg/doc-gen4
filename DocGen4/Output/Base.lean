@@ -202,6 +202,10 @@ def templateExtends {α β} {m} [Bind m] (base : α → m β) (new : m α) : m �
 
 def templateLiftExtends {α β} {m n} [Bind m] [MonadLiftT n m] (base : α → n β) (new : m α) : m β :=
   new >>= (monadLift ∘ base)
+/-- timaeus fork: join an external base URL and a relative path with one slash. -/
+private def joinExternal (base rel : String) : String :=
+  (if base.endsWith "/" then base else base ++ "/") ++ rel
+
 /--
 timaeus fork: resolve a declaration name to its link on the hosted external docs
 via the `externalDeclData` address book. Returns `none` if there is no external
@@ -211,8 +215,8 @@ def externalDeclLink? (name : Name) : BaseHtmlM (Option String) := do
   let ctx ← read
   match ctx.externalDocsBase, ctx.externalDeclData[name]? with
   | some base, some docLink =>
-    let rel := if docLink.startsWith "./" then docLink.drop 2 else docLink
-    return some ((if base.endsWith "/" then base else base ++ "/") ++ rel)
+    let rel := if docLink.startsWith "./" then (docLink.drop 2).toString else docLink
+    return some (joinExternal base rel)
   | _, _ => return none
 
 /--
@@ -225,7 +229,7 @@ def moduleNameToLink (n : Name) : BaseHtmlM String := do
   -- Redirect modules outside `localRoots` to the hosted docs, when configured.
   if let some base := ctx.externalDocsBase then
     if !ctx.localRoots.contains n.getRoot then
-      return (if base.endsWith "/" then base else base ++ "/") ++ rel
+      return joinExternal base rel
   return (← getRoot) ++ rel
 
 /--
