@@ -82,6 +82,14 @@ structure SiteBaseContext where
   `externalDocsBase`. Only consulted when `externalDocsBase` is `some`.
   -/
   localRoots : Array Name := #[]
+  /--
+  timaeus fork: external declaration address book, mapping a declaration name to
+  its `docLink` (relative URL + anchor) on the hosted docs site. Populated from
+  the hosted `declaration-data.bmp` (see `DOCGEN_EXTERNAL_DECL_DATA`). Lets us
+  resolve references to Mathlib/core declarations that are NOT in the local
+  database, so the emitted DB only needs the project's own modules.
+  -/
+  externalDeclData : Std.HashMap Name String := {}
 
 /--
 Declaration decorator function type: given a module name, declaration name, and declaration kind,
@@ -194,6 +202,19 @@ def templateExtends {α β} {m} [Bind m] (base : α → m β) (new : m α) : m �
 
 def templateLiftExtends {α β} {m n} [Bind m] [MonadLiftT n m] (base : α → n β) (new : m α) : m β :=
   new >>= (monadLift ∘ base)
+/--
+timaeus fork: resolve a declaration name to its link on the hosted external docs
+via the `externalDeclData` address book. Returns `none` if there is no external
+base configured or the name is not in the book.
+-/
+def externalDeclLink? (name : Name) : BaseHtmlM (Option String) := do
+  let ctx ← read
+  match ctx.externalDocsBase, ctx.externalDeclData[name]? with
+  | some base, some docLink =>
+    let rel := if docLink.startsWith "./" then docLink.drop 2 else docLink
+    return some ((if base.endsWith "/" then base else base ++ "/") ++ rel)
+  | _, _ => return none
+
 /--
 Returns the doc-gen4 link to a module name.
 -/
@@ -348,6 +369,13 @@ partial def renderedCodeToHtmlAux (code : RenderedCode) : HtmlM (Bool × Array H
       -- Direct match: non-private name in name2ModIdx
       if name2ModIdx.contains name && (Lean.privatePrefix? name).isNone then
         let link ← declNameToLink name
+        if innerHasAnchor then
+          return (true, innerHtml)
+        else
+          return (true, #[<a href={link}>[innerHtml]</a>])
+      else if let some link ← externalDeclLink? name then
+        -- timaeus fork: name not in the local DB, but resolved via the hosted
+        -- external declaration data (Mathlib/core). See `externalDeclData`.
         if innerHasAnchor then
           return (true, innerHtml)
         else
