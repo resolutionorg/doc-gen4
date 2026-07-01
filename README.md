@@ -9,8 +9,8 @@ Document Generator for Lean 4
 
 ## Timaeus changes
 
-See [`TIMAEUS.md`](TIMAEUS.md) for the full rationale, deployment design, and
-the per-repo build script (`scripts/build-repo-docs.sh`). In brief:
+See [`TIMAEUS.md`](TIMAEUS.md) for the full rationale and deployment design; the
+build/publish orchestration lives in the `tide-docs` skill in the SRI repo. In brief:
 
 - **`DOCGEN_LOCAL_ROOTS`** (comma-separated module roots, e.g. `Laplace,Common`) —
   `fromDb` emits HTML **and** the search index only for modules whose root is in
