@@ -1,5 +1,31 @@
-# `doc-gen4`
+# `doc-gen4` (Timaeus fork)
 Document Generator for Lean 4
+
+> **This is Timaeus's internal fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.29.0` (upstream commit `aa4c3e4`).**
+> It adds three env-gated features so a Mathlib-importing project can publish
+> docs for its own modules only, linking out to the hosted Mathlib docs. With
+> none of the env vars set, behaviour is identical to upstream.
+> To pull upstream changes: `git fetch upstream && git rebase v4.<x>.<y>`.
+
+## Timaeus changes
+
+See [`TIMAEUS.md`](TIMAEUS.md) for the full rationale, deployment design, and
+the per-repo build script (`scripts/build-repo-docs.sh`). In brief:
+
+- **`DOCGEN_LOCAL_ROOTS`** (comma-separated module roots, e.g. `Laplace,Common`) —
+  `fromDb` emits HTML **and** the search index only for modules whose root is in
+  this allowlist. The full DB linking context is still loaded, so cross-references
+  resolve. This trims a Mathlib downstream from hundreds of thousands of files
+  down to just the project's own modules. (`Main.lean`, `DocGen4/Output.lean`)
+- **`DOCGEN_EXTERNAL_BASE`** (e.g. `https://leanprover-community.github.io/mathlib4_docs/`) —
+  `moduleNameToLink` redirects links for modules outside `DOCGEN_LOCAL_ROOTS` to
+  this base instead of a local relative path, keeping Mathlib/core references
+  clickable against the already-hosted docs. (`DocGen4/Output/Base.lean`)
+- **`ingest` command** — adds many modules to an existing DB in a single
+  environment load (one `importModules`), each with its own source URL derived
+  from `--source-base`. This is how a repo's own modules are added on top of a
+  shared, reusable Mathlib-only base DB without re-ingesting Mathlib.
+  (`Main.lean`, `DocGen4/DB.lean`)
 
 ## Usage
 `doc-gen4` is easiest to use via its custom Lake facet. The currently recommended setup for
