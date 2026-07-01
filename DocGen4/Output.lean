@@ -183,6 +183,20 @@ def readLocalRoots : IO (Array Name) := do
       let x := x.trim
       if x.isEmpty then none else some x.toName
 
+/-- timaeus fork: load the external declaration address book (name -> docLink)
+from the TSV pointed at by `DOCGEN_EXTERNAL_DECL_DATA` (produced from the hosted
+`declaration-data.bmp`). Each line is `name\tdocLink`. Empty when unset. -/
+def readExternalDeclData : IO (Std.HashMap Name String) := do
+  match ← IO.getEnv "DOCGEN_EXTERNAL_DECL_DATA" with
+  | none => return {}
+  | some path =>
+    let mut m : Std.HashMap Name String := {}
+    for line in (← IO.FS.lines path) do
+      match line.splitOn "\t" with
+      | [n, d] => m := m.insert n.toName d
+      | _ => pure ()
+    return m
+
 def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
     IO SiteBaseContext := do
   let contents ← FS.readFile (declarationsBasePath buildDir / "references.json") <|> (pure "[]")
@@ -197,6 +211,7 @@ def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
       -- timaeus fork: external-docs redirect config from the environment.
       let externalDocsBase ← IO.getEnv "DOCGEN_EXTERNAL_BASE"
       let localRoots ← readLocalRoots
+      let externalDeclData ← readExternalDeclData
       return {
         buildDir := buildDir
         depthToRoot := 0
@@ -205,6 +220,7 @@ def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
         refs := refs
         externalDocsBase := externalDocsBase
         localRoots := localRoots
+        externalDeclData := externalDeclData
       }
 
 def htmlOutputIndex (baseConfig : SiteBaseContext) (modules : Array JsonModule) (tacticInfo : Array (Process.TacticInfo Html)) : IO Unit := do
