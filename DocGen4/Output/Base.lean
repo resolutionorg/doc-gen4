@@ -70,6 +70,18 @@ structure SiteBaseContext where
   The list of references, as an array.
   -/
   refs : Array BibItem
+  /--
+  timaeus fork: base URL to redirect links for external (non-local) modules to,
+  e.g. "https://leanprover-community.github.io/mathlib4_docs/". When `none`,
+  upstream behaviour (all links relative/local) is preserved.
+  -/
+  externalDocsBase : Option String := none
+  /--
+  timaeus fork: top-level module roots considered local (HTML is emitted for
+  them). Links to any module whose root is not in this set are redirected to
+  `externalDocsBase`. Only consulted when `externalDocsBase` is `some`.
+  -/
+  localRoots : Array Name := #[]
 
 /--
 Declaration decorator function type: given a module name, declaration name, and declaration kind,
@@ -186,8 +198,14 @@ def templateLiftExtends {α β} {m n} [Bind m] [MonadLiftT n m] (base : α → n
 Returns the doc-gen4 link to a module name.
 -/
 def moduleNameToLink (n : Name) : BaseHtmlM String := do
+  let ctx ← read
   let parts := n.components.map (Name.toString (escape := False))
-  return (← getRoot) ++ (parts.intersperse "/").foldl (· ++ ·) "" ++ ".html"
+  let rel := (parts.intersperse "/").foldl (· ++ ·) "" ++ ".html"
+  -- Redirect modules outside `localRoots` to the hosted docs, when configured.
+  if let some base := ctx.externalDocsBase then
+    if !ctx.localRoots.contains n.getRoot then
+      return (if base.endsWith "/" then base else base ++ "/") ++ rel
+  return (← getRoot) ++ rel
 
 /--
 Returns the HTML doc-gen4 link to a module name.
