@@ -23,10 +23,10 @@ def runSingleCmd (p : Parsed) : IO UInt32 := do
   return 0
 
 /--
-timaeus fork: ingest MANY modules into an existing DB in a single environment
-load (one `importModules`, then analyze each listed module). This is how a
-repo's own modules are added on top of a shared Mathlib-only base DB without
-re-ingesting Mathlib. Each module's GitHub blob URL is derived from `--source-base`.
+timaeus fork: ingest MANY modules into a DB in a single environment load (one
+`importModules`, then analyze each listed module). Used to populate a fresh
+database with a repo's own modules; each module's GitHub blob URL is derived
+from `--source-base`.
 -/
 def runIngestCmd (p : Parsed) : IO UInt32 := do
   let buildDir := match p.flag? "build" with
@@ -111,12 +111,11 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
       pure linkCtx.moduleNames
     else
       db.getTransitiveImports moduleRoots
-  -- timaeus fork: when DOCGEN_LOCAL_ROOTS is set, only emit HTML (and search
-  -- index entries) for modules whose top-level root is in the allowlist. The
-  -- linking context still covers every module, so cross-references resolve;
-  -- links to non-local modules are redirected by moduleNameToLink via
-  -- DOCGEN_EXTERNAL_BASE. This is what trims a Mathlib-importing project's docs
-  -- from hundreds of thousands of files down to just the project's own modules.
+  -- timaeus fork: when DOCGEN_LOCAL_ROOTS is set, emit HTML (and search index
+  -- entries) only for modules whose top-level root is in the allowlist -- this
+  -- trims a Mathlib-importing project's docs to just its own modules. Links to
+  -- non-local modules and declarations are redirected out (see moduleNameToLink
+  -- and externalDeclLink?).
   let localRoots ← readLocalRoots
   let targetModules ←
     if localRoots.isEmpty then pure targetModulesAll
