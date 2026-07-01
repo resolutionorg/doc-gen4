@@ -70,20 +70,16 @@ scope = "leanprover-community"
 rev = "v4.29.0"
 ```
 
-Use `scripts/build-repo-docs.sh <repo-dir> <local-roots>` — it scaffolds
-`docbuild/`, reuses the repo's already-built `../.lake/packages`, populates the
-shared `api-docs.db`, and emits the trimmed site:
+The build/publish orchestration lives in the **`tide-docs` skill**
+(`sri/.agents/skills/tide-docs/`), not in this repo. It scaffolds `docbuild/`,
+ensures the shared base DB, ingests the repo's modules, emits the trimmed site,
+and publishes to `therisensea.org/docs/<slug>/`. Run `uv run --script tide-docs`.
 
-```bash
-scripts/build-repo-docs.sh ../laplace "Laplace,Common,Threepoint"
-# output: ../laplace/docbuild/.lake/build/doc/   (copy to therisensea/docs/laplace/)
-```
-
-Note it enumerates **all** of the lib's source modules as `fromDb` roots, not
-just the lib's root aggregator. doc-gen4's `<Lib>:docs` facet only documents the
-transitive closure of the root module (`Laplace.lean`); laplace had 16 modules
-(a WIP Anharmonic-FDT cluster + covariance variants) not imported by it, which
-that facet silently drops. Enumerating every `.lean` as a root covers them.
+A subtlety `tide-docs` handles: it ingests **every built module** of the lib,
+not just the transitive closure of the root aggregator. doc-gen4's `<Lib>:docs`
+facet only documents what `<Lib>.lean` imports; laplace had 16 modules (a WIP
+Anharmonic-FDT cluster + covariance variants) not imported by it, which that
+facet silently drops. Enumerating built `.olean`s as roots covers them.
 
 ## Shared base DB (build Mathlib's docInfo once)
 
