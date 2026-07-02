@@ -161,12 +161,18 @@ private def ReadStmts.prepare (sqlite : SQLite) (values : DocstringValues) : IO 
   let getModuleImportsStmt ← sqlite.prepare "SELECT imported FROM module_imports WHERE importer = ?"
   let buildNameInfoStmt ← sqlite.prepare "SELECT name, module_name FROM name_info"
   let buildInternalNamesStmt ← sqlite.prepare "SELECT name, target_module FROM internal_names"
+  -- Members come from three tables: declarations (kind and name non-NULL),
+  -- module docstrings (kind NULL), and examples (kind 'example', name NULL —
+  -- timaeus fork). The text column carries the docstring or example source.
   let loadModuleMembersStmt ← sqlite.prepare
-    "SELECT position, kind, name, type, sorried, render, NULL as mod_doc \
+    "SELECT position, kind, name, type, sorried, render, NULL as text \
      FROM name_info WHERE module_name = ? \
      UNION ALL \
      SELECT position, NULL, NULL, NULL, 0, 0, text \
      FROM module_docs_markdown WHERE module_name = ? \
+     UNION ALL \
+     SELECT position, 'example', NULL, NULL, 0, 0, source \
+     FROM examples WHERE module_name = ? \
      ORDER BY position"
   let loadTacticsStmt ← sqlite.prepare "SELECT internal_name, user_name, doc_string FROM tactics WHERE module_name = ?"
   let loadTacticTagsStmt ← sqlite.prepare "SELECT tag FROM tactic_tags WHERE module_name = ? AND internal_name = ?"
@@ -588,9 +594,10 @@ open Lean SQLite.Blob in
 private def ReadStmts.loadModule (s : ReadStmts) (moduleName : Name) : IO Process.Module := do
   let modNameStr := moduleName.toString
   let imports ← s.getModuleImports moduleName
-  -- Single query returns declarations and module docstrings in position order
+  -- Single query returns declarations, module docstrings, and examples in position order
   s.loadModuleMembersStmt.bind 1 modNameStr
   s.loadModuleMembersStmt.bind 2 modNameStr
+  s.loadModuleMembersStmt.bind 3 modNameStr
   let mut members : Array Process.ModuleMember := #[]
   while (← s.loadModuleMembersStmt.step) do
     let position ← s.loadModuleMembersStmt.columnInt64 0
@@ -600,6 +607,12 @@ private def ReadStmts.loadModule (s : ReadStmts) (moduleName : Name) : IO Proces
       match (← s.loadDeclarationRange modNameStr position) with
       | some declRange => members := members.push (.modDoc { doc, declarationRange := declRange })
       | none => IO.eprintln s!"warning: missing declaration range for module docstring at position {position} in module '{modNameStr}'; skipping"
+    else if (← s.loadModuleMembersStmt.columnNull 2) then
+      -- timaeus fork: examples (kind is 'example', name column is NULL)
+      let source ← s.loadModuleMembersStmt.columnText 6
+      match (← s.loadDeclarationRange modNameStr position) with
+      | some declRange => members := members.push (.exampleDecl { source, declarationRange := declRange })
+      | none => IO.eprintln s!"warning: missing declaration range for example at position {position} in module '{modNameStr}'; skipping"
     else
       -- Declaration
       let kind ← s.loadModuleMembersStmt.columnText 1

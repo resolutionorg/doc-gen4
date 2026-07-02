@@ -129,13 +129,33 @@ def modDocToHtml (mdoc : ModuleDoc) : HtmlM Html := do
     </div>
 
 /--
-Render a module member, that is either a module doc string or a declaration
-as HTML.
+timaeus fork: render an `example` command recovered from the module's source.
+Examples never persist in the environment, so all we have is their source
+text, rendered as a declaration-like block titled "example".
+-/
+def exampleToHtml (module : Name) (info : Process.ExampleInfo) : HtmlM Html := do
+  pure
+    <div class="decl">
+      <div class="example">
+        <div class="gh_link">
+          <a href={← getSourceUrl module (some info.declarationRange)}>source</a>
+        </div>
+        <div class="decl_header">
+          {Html.element "span" false #[("class", "decl_kind")] #["example"]}
+        </div>
+        {Html.element "pre" true #[("class", "example_src")] #[Html.text info.source]}
+      </div>
+    </div>
+
+/--
+Render a module member, that is a module doc string, a declaration, or an
+`example` recovered from the source, as HTML.
 -/
 def moduleMemberToHtml (module : Name) (member : ModuleMember) : HtmlM Html := do
   match member with
   | ModuleMember.docInfo d => docInfoToHtml module d
   | ModuleMember.modDoc d => modDocToHtml d
+  | ModuleMember.exampleDecl d => exampleToHtml module d
 
 def declarationToNavLink (module : Name) : Html :=
   <div class="nav_link">

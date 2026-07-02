@@ -23,7 +23,7 @@ database schema lives in `DocGen4.DB.Schema`.
 
 ## Module Item Positions
 
-Within a module, each item (declaration, module doc, constructor) is assigned a sequential `Int64`
+Within a module, each item (declaration, module doc, example, constructor) is assigned a sequential `Int64`
 position starting from 0. This position serves as the item's identity within the module: the
 composite key `(module_name, position)` is the primary key for most tables. Positions are assigned
 in the order items appear in the module's `members` array, with constructors and structure fields
@@ -62,6 +62,8 @@ structure WriteDB where
   saveImport (modName : String) (imported : Lean.Name) : IO Unit
   saveMarkdownDocstring (modName : String) (position : Int64) (text : String) : IO Unit
   saveModuleDoc (modName : String) (position : Int64) (text : String) : IO Unit
+  /-- timaeus fork: save an `example` command's source text -/
+  saveExample (modName : String) (position : Int64) (source : String) : IO Unit
   saveVersoDocstring (modName : String) (position : Int64) (text : Lean.VersoDocString) : IO Unit
   saveDeclarationRange (modName : String) (position : Int64) (declRange : Lean.DeclarationRange) : IO Unit
   saveInfo (modName : String) (position : Int64) (kind : String) (info : Process.Info) : IO Unit
@@ -132,6 +134,7 @@ private structure WriteStmts where
   saveImportStmt : SQLite.Stmt
   saveMarkdownDocstringStmt : SQLite.Stmt
   saveModuleDocStmt : SQLite.Stmt
+  saveExampleStmt : SQLite.Stmt
   saveVersoDocstringStmt : SQLite.Stmt
   saveDeclarationRangeStmt : SQLite.Stmt
   saveInfoStmt : SQLite.Stmt
@@ -167,6 +170,7 @@ private def WriteStmts.prepare (sqlite : SQLite) (values : DocstringValues) : IO
     saveImportStmt := ← sqlite.prepare "INSERT OR IGNORE INTO module_imports (importer, imported) VALUES (?, ?)"
     saveMarkdownDocstringStmt := ← sqlite.prepare "INSERT INTO declaration_markdown_docstrings (module_name, position, text) VALUES (?, ?, ?)"
     saveModuleDocStmt := ← sqlite.prepare "INSERT INTO module_docs_markdown (module_name, position, text) VALUES (?, ?, ?)"
+    saveExampleStmt := ← sqlite.prepare "INSERT INTO examples (module_name, position, source) VALUES (?, ?, ?)"
     saveVersoDocstringStmt := ← sqlite.prepare "INSERT INTO declaration_verso_docstrings (module_name, position, content) VALUES (?, ?, ?)"
     saveDeclarationRangeStmt := ← sqlite.prepare
       "INSERT INTO declaration_ranges (module_name, position, start_line, start_column, start_utf16, end_line, end_column, end_utf16) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
@@ -220,6 +224,12 @@ private def WriteStmts.saveModuleDoc (s : WriteStmts) (modName : String) (positi
   s.saveModuleDocStmt.bind 2 position
   s.saveModuleDocStmt.bind 3 text
   run s.saveModuleDocStmt
+
+private def WriteStmts.saveExample (s : WriteStmts) (modName : String) (position : Int64) (source : String) : IO Unit := withDbContext "write:insert:examples" do
+  s.saveExampleStmt.bind 1 modName
+  s.saveExampleStmt.bind 2 position
+  s.saveExampleStmt.bind 3 source
+  run s.saveExampleStmt
 
 private def WriteStmts.saveVersoDocstring (s : WriteStmts) (modName : String) (position : Int64) (text : Lean.VersoDocString) : IO Unit := do
   have := versoDocStringQueryParam s.values
@@ -430,6 +440,7 @@ def ensureWriteDb (values : DocstringValues) (dbFile : System.FilePath) : IO Wri
     saveImport modName imported := writeMutex.atomically do (← get).saveImport modName imported
     saveMarkdownDocstring modName position text := writeMutex.atomically do (← get).saveMarkdownDocstring modName position text
     saveModuleDoc modName position text := writeMutex.atomically do (← get).saveModuleDoc modName position text
+    saveExample modName position source := writeMutex.atomically do (← get).saveExample modName position source
     saveVersoDocstring modName position text := writeMutex.atomically do (← get).saveVersoDocstring modName position text
     saveDeclarationRange modName position declRange := writeMutex.atomically do (← get).saveDeclarationRange modName position declRange
     saveInfo modName position kind info := writeMutex.atomically do (← get).saveInfo modName position kind info
@@ -555,6 +566,10 @@ def updateModuleDb (values : DocstringValues)
             | .modDoc doc =>
               db.saveDeclarationRange modNameStr pos doc.declarationRange
               db.saveModuleDoc modNameStr pos doc.doc
+            -- timaeus fork: examples recovered from the source
+            | .exampleDecl info =>
+              db.saveDeclarationRange modNameStr pos info.declarationRange
+              db.saveExample modNameStr pos info.source
             | .docInfo info =>
               let baseInfo := info.toInfo
               -- Skip saving ctorInfo here - they're saved along with their parent inductive

@@ -24,11 +24,26 @@ open Lean.Elab.Tactic.Doc
 abbrev MarkdownDocstring := String
 
 /--
-Member of a module, either a declaration or some module doc string.
+timaeus fork: an `example` command recovered from a module's source file.
+
+`example`s are elaborated inside `withoutModifyingEnv` (see `Lean.Elab.MutualDef`),
+so they never persist in the environment or the olean — the only way to document
+them is to re-parse the source. All we have is their raw source text.
+-/
+structure ExampleInfo where
+  /-- The example's source text, including any doc comment and attributes. -/
+  source : String
+  declarationRange : DeclarationRange
+  deriving Inhabited
+
+/--
+Member of a module, either a declaration, some module doc string, or an
+`example` recovered from the source (timaeus fork).
 -/
 inductive ModuleMember where
 | docInfo (info : DocInfo) : ModuleMember
 | modDoc (doc : ModuleDoc) : ModuleMember
+| exampleDecl (info : ExampleInfo) : ModuleMember
 deriving Inhabited
 
 /-- Information about a tactic declaration which will be rendered on the Tactics page.
@@ -106,6 +121,7 @@ namespace ModuleMember
 def getDeclarationRange : ModuleMember → DeclarationRange
 | docInfo i => i.getDeclarationRange
 | modDoc i => i.declarationRange
+| exampleDecl i => i.declarationRange
 
 /--
 An order for module members, based on their declaration range.
@@ -116,14 +132,17 @@ def order (l r : ModuleMember) : Bool :=
 def getName : ModuleMember → Name
 | docInfo i => i.getName
 | modDoc _ => Name.anonymous
+| exampleDecl _ => Name.anonymous
 
 def getDocString : ModuleMember → Option (String ⊕ VersoDocString)
 | docInfo i => i.getDocString
 | modDoc i => some (.inl i.doc)
+| exampleDecl _ => none
 
 def shouldRender : ModuleMember → Bool
 | docInfo i => i.shouldRender
 | modDoc _ => true
+| exampleDecl _ => true
 
 end ModuleMember
 
@@ -170,6 +189,58 @@ def mkOptions : IO DocGenOptions := do
   match ← IO.getEnv "DISABLE_EQUATIONS" with
   | some "1" => return ⟨false⟩
   | _ => return {}
+
+/--
+Whether a top-level command syntax node is an `example` declaration, looking
+through `open ... in` / `set_option ... in` wrappers (`Parser.Command.in`).
+-/
+partial def isExampleCommand (stx : Syntax) : Bool :=
+  if stx.isOfKind ``Parser.Command.declaration then
+    stx[1].isOfKind ``Parser.Command.example
+  else if stx.isOfKind ``Parser.Command.in && stx.getNumArgs > 0 then
+    isExampleCommand stx[stx.getNumArgs - 1]
+  else
+    false
+
+/--
+timaeus fork: collect the `example` commands of a module by re-parsing its
+source file (parser only, no elaboration).
+
+The source is located through `LEAN_SRC_PATH` (set by Lake); if it cannot be
+found we warn and return no examples. Parsing uses the loaded environment, so
+token tables and command syntax registered by the module's imports are
+available.
+-/
+def collectExamples (module : Name) : MetaM (Array ModuleMember) := do
+  let sp ← Lean.getSrcSearchPath
+  let some path ← sp.findModuleWithExt "lean" module
+    | do
+        IO.println s!"WARNING: could not locate source of {module}, example declarations will not be documented"
+        return #[]
+  let input ← IO.FS.readFile path
+  let inputCtx := Parser.InputContext.mk input path.toString
+  let (_, parserState, messages) ← Parser.parseHeader inputCtx
+  let pmctx : Parser.ParserModuleContext := { env := ← getEnv, options := {} }
+  let mut state := parserState
+  let mut msgs := messages
+  let mut members := #[]
+  repeat
+    let (cmd, state', msgs') := Parser.parseCommand inputCtx pmctx state msgs
+    state := state'
+    msgs := msgs'
+    if Parser.isTerminalCommand cmd then
+      break
+    if isExampleCommand cmd then
+      if let (some startPos, some stopPos) := (cmd.getPos?, cmd.getTailPos?) then
+        let source := inputCtx.extract startPos stopPos
+        let declarationRange : DeclarationRange := {
+          pos := inputCtx.fileMap.toPosition startPos
+          charUtf16 := (inputCtx.fileMap.utf8PosToLspPos startPos).character
+          endPos := inputCtx.fileMap.toPosition stopPos
+          endCharUtf16 := (inputCtx.fileMap.utf8PosToLspPos stopPos).character
+        }
+        members := members.push (ModuleMember.exampleDecl { source, declarationRange })
+  return members
 
 /--
 Run the doc-gen analysis on all modules that are loaded into the `Environment`
@@ -220,6 +291,27 @@ def process (task : AnalyzeTask) : MetaM AnalyzerResult := do
           IO.println s!"WARNING: Failed to obtain information for: {name}: {← e.toMessageData.toString}"
         return res
       )
+
+  -- timaeus fork: `example` commands never make it into the environment (they
+  -- are elaborated inside `withoutModifyingEnv`), so they are recovered by
+  -- re-parsing each module's source and interleaved with the other members by
+  -- position (see the qsort below). Failures are contained per module: a file
+  -- that cannot be found or parsed costs its own examples, not the analysis.
+  -- Skipped for the prefix task (`genCore`) and when DOCGEN_EXAMPLES=0.
+  let examplesEnabled := (← IO.getEnv "DOCGEN_EXAMPLES") != some "0"
+  let collectExamples? :=
+    match task with
+    | .analyzeConcreteModules _ => examplesEnabled
+    | .analyzePrefixModules _ => false
+  if collectExamples? then
+    for (moduleName, module) in res.toArray do
+      let examples ← tryCatchRuntimeEx
+        (collectExamples moduleName)
+        (fun e => do
+          IO.println s!"WARNING: example extraction failed for {moduleName}: {← e.toMessageData.toString}"
+          return #[])
+      if !examples.isEmpty then
+        res := res.insert moduleName {module with members := module.members ++ examples}
 
   -- TODO: This could probably be faster if we did sorted insert above instead
   for (moduleName, module) in res.toArray do

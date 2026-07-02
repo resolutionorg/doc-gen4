@@ -600,6 +600,18 @@ main h2, main h3, main h4, main h5, main h6 {
     border-top: 2px solid var(--axiom-and-constant-color);
 }
 
+/* timaeus fork: `example` blocks recovered from the source. Dashed border
+   signals "anonymous, source-only" as opposed to a named declaration. */
+.example {
+    border-left: 10px dashed var(--theorem-color);
+    border-top: 2px dashed var(--theorem-color);
+}
+
+.example_src {
+    margin: 8px 0;
+    overflow-x: auto;
+}
+
 .structure, .inductive, .class {
     border-left: 10px solid var(--structure-and-inductive-color);
     border-top: 2px solid var(--structure-and-inductive-color);

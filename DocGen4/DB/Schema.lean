@@ -163,6 +163,18 @@ CREATE TABLE IF NOT EXISTS module_docs_markdown (
   FOREIGN KEY (module_name) REFERENCES modules(name) ON DELETE CASCADE
 );
 
+-- timaeus fork: `example` commands recovered from the module source (they are
+-- absent from the environment/olean). Stored as raw source text; the position
+-- interleaves them with the module's other members, and declaration_ranges
+-- holds their source range like any other member.
+CREATE TABLE IF NOT EXISTS examples (
+  module_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  PRIMARY KEY (module_name, position),
+  FOREIGN KEY (module_name) REFERENCES modules(name) ON DELETE CASCADE
+);
+
 -- TODO: Add module_docs_verso table for Lean.VersoModuleDocs.Snippet
 
 CREATE TABLE IF NOT EXISTS declaration_verso_docstrings (
