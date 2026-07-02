@@ -14,9 +14,9 @@ docs are already hosted.
 
 ## What the fork changes
 
-Three env-var-gated behaviours; with none set the fork is byte-identical to
-upstream. See `Main.lean`, `DocGen4/Output.lean`, `DocGen4/Output/Base.lean`,
-`DocGen4/DB.lean`.
+Three env-var-gated behaviours (with none set they are byte-identical to
+upstream), plus `example` rendering, which is on by default. See `Main.lean`,
+`DocGen4/Output.lean`, `DocGen4/Output/Base.lean`, `DocGen4/DB.lean`.
 
 ### `DOCGEN_LOCAL_ROOTS` — trim emitted modules + search index
 
@@ -48,6 +48,22 @@ The book is produced from Mathlib's own published
 `declarations/declaration-data.bmp` (see the `tide-docs` skill). Because we
 resolve links from the **same** data we redirect **to**, every emitted link
 points exactly where the hosted site currently serves that declaration.
+
+### `example` declarations — rendered from the source (`DOCGEN_EXAMPLES`)
+
+Lean elaborates `example` inside `withoutModifyingEnv` (`Lean.Elab.MutualDef`),
+so examples never persist in the environment or olean — upstream doc-gen4,
+which enumerates `env.constants`, cannot see them and silently drops them from
+module pages. The fork recovers them by re-parsing each module's source file
+(parser only, no elaboration; `Process.extractExamples` in
+`DocGen4/Process/Examples.lean`), storing their raw source text in the DB
+(`module_examples` table), and rendering each as a declaration-style block
+titled "example" with the source in a code block, interleaved with the other
+members in source order. The source file is located via `LEAN_SRC_PATH` (set by
+Lake); if it cannot be found or parsed, that module simply has no examples. On
+by default for project ingestion (`single`/`ingest`); skipped for `genCore`;
+set `DOCGEN_EXAMPLES=0` to disable. Examples are anonymous, so they never
+appear in the search index, nav, or dep atlas.
 
 ## No base DB: what the emitted database contains
 

@@ -39,6 +39,10 @@ EOF
 cat > "$TEST_DIR/LibA.lean" << 'EOF'
 /-- A greeting from LibA -/
 def libAGreeting := "hello from A"
+
+example : libAGreeting = "hello from A" := rfl
+
+example (n : Nat) : n + 0 = n := Nat.add_zero n
 EOF
 
 cat > "$TEST_DIR/LibB.lean" << 'EOF'
@@ -77,6 +81,19 @@ check_html() {
 echo "=== Building LibA:docs and LibB:docs ==="
 (cd "$TEST_DIR" && lake build LibA:docs LibB:docs)
 check_html LibA LibB
+
+# --- Phase 1b: `example` commands are rendered (recovered from the source) ---
+
+echo "=== Checking example declarations in LibA.html ==="
+if [ "$(grep -c 'class="example_source"' "$DOC_DIR/LibA.html")" -ne 2 ]; then
+  echo "FAIL: expected 2 example blocks in LibA.html"
+  exit 1
+fi
+if ! grep -q 'n + 0 = n' "$DOC_DIR/LibA.html"; then
+  echo "FAIL: example source text missing from LibA.html"
+  exit 1
+fi
+echo "OK: both examples rendered in LibA.html"
 
 # --- Phase 2: add LibC incrementally, verify A and B survive ---
 
