@@ -337,6 +337,20 @@
   font-weight: bold;
 }
 
+.atlas_force {
+  cursor: grab;
+  touch-action: none;
+}
+
+.atlas_force:active {
+  cursor: grabbing;
+}
+
+.atlas_force line,
+.atlas_force circle {
+  vector-effect: non-scaling-stroke;
+}
+
 .atlas_force .force_edge {
   stroke: var(--text-color);
   opacity: 0.14;
@@ -344,71 +358,45 @@
 
 .atlas_force .force_node circle {
   stroke: var(--body-bg);
-  stroke-width: 1;
+  stroke-width: 1px;
   fill-opacity: 0.8;
 }
 
-/* Hover focus: dim everything, then re-light the two dependency cones. */
+/* Hover: color the two dependency cones; everything else stays put. */
 
-.atlas_force.force_focus .force_edge {
-  opacity: 0.04;
-}
-
-.atlas_force.force_focus .force_node circle {
-  fill-opacity: 0.15;
-}
-
-.atlas_force.force_focus .force_label {
-  opacity: 0.12;
-}
-
-.atlas_force.force_focus .force_edge.force_edge_up {
+.atlas_force .force_edge.force_edge_up {
   stroke: var(--link-color);
-  opacity: 0.6;
+  stroke-width: 1.6px;
+  opacity: 0.55;
 }
 
-.atlas_force.force_focus .force_edge.force_edge_down {
+.atlas_force .force_edge.force_edge_down {
   stroke: var(--structure-and-inductive-color);
-  opacity: 0.7;
-}
-
-.atlas_force.force_focus .force_node.force_hot circle,
-.atlas_force.force_focus .force_node.force_up circle,
-.atlas_force.force_focus .force_node.force_down circle {
-  fill-opacity: 1;
+  stroke-width: 1.6px;
+  opacity: 0.65;
 }
 
 .atlas_force .force_node.force_up circle {
   stroke: var(--link-color);
-  stroke-width: 1.8;
+  stroke-width: 2px;
+  fill-opacity: 1;
 }
 
 .atlas_force .force_node.force_down circle {
   stroke: var(--structure-and-inductive-color);
-  stroke-width: 1.8;
+  stroke-width: 2px;
+  fill-opacity: 1;
 }
 
 .atlas_force .force_node.force_hot circle {
   stroke: var(--text-color);
-  stroke-width: 2.2;
+  stroke-width: 2.5px;
+  fill-opacity: 1;
 }
 
-.force_hover_name,
-.force_hover_stats {
-  fill: var(--text-color);
-  font-family: 'JuliaMono', monospace;
-  paint-order: stroke;
-  stroke: var(--body-bg);
-  stroke-width: 3px;
-  pointer-events: none;
-}
-
-.force_hover_name {
+.atlas_force .force_label.force_label_hot {
   font-weight: bold;
-}
-
-.force_hover_stats {
-  opacity: 0.8;
+  opacity: 1;
 }
 
 .atlas_force .force_label {
