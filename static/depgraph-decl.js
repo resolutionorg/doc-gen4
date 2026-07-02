@@ -29,6 +29,7 @@ function extChip(name, url) {
 
 function declItem(graph, headers, id, depth) {
   const nd = graph.node(id);
+  const entry = headers.get(nd.n);
   const item = el("div", "depgraph_item");
   item.dataset.name = nd.n;
   if (depth !== undefined) item.style.setProperty("--depgraph-depth", depth);
@@ -37,8 +38,12 @@ function declItem(graph, headers, id, depth) {
   const mod = el("a", "depgraph_item_mod", graph.modules[nd.m]);
   mod.href = graph.moduleLink(nd.m);
   meta.appendChild(mod);
+  if (entry?.info.sourceLink) {
+    const src = el("a", "depgraph_item_src", "source");
+    src.href = entry.info.sourceLink;
+    meta.appendChild(src);
+  }
   item.appendChild(meta);
-  const entry = headers.get(nd.n);
   if (entry) {
     // The signature already shows the kind and the linked name.
     const sig = el("div", "depgraph_item_sig");
