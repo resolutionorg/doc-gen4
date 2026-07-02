@@ -65,6 +65,12 @@ def docInfoHeader (doc : DocInfo) : HtmlM Html := do
 The main entry point for rendering a single declaration inside a given module.
 -/
 def docInfoToHtml (module : Name) (doc : DocInfo) : HtmlM Html := do
+  -- timaeus fork: mount point that depgraph-decl.js fills with the deps /
+  -- used-by toggles; emitting it server-side keeps the JS independent of the
+  -- surrounding page structure. Empty (invisible) without JS.
+  let depgraphToggleMount :=
+    Html.element "div" false
+      #[("class", "depgraph_toggles"), ("data-decl", doc.getName.toString)] #[]
   -- basic info like headers, types, structure fields, etc.
   let docInfoHtml ← match doc with
   | DocInfo.inductiveInfo i => inductiveToHtml i
@@ -102,6 +108,7 @@ def docInfoToHtml (module : Name) (doc : DocInfo) : HtmlM Html := do
         <div class="gh_link">
           <a href={← getSourceUrl module doc.getDeclarationRange}>source</a>
         </div>
+        {depgraphToggleMount}
         [decoratorHtml]
         [attrsHtml]
         {← docInfoHeader doc}

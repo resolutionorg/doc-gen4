@@ -27,12 +27,13 @@ value-site dependencies of proof-valued declarations (i.e. which Mathlib lemmas
 a proof uses) are deliberately dropped — no view needs them and they are the
 bulk of the raw edge set.
 
-Format (all arrays index-aligned, node/external references by index):
+Format (all arrays index-aligned, node/external references by index; the
+modules array holds only modules owning at least one node):
 ```
 { "v": 1,
   "modules": ["Pas.Basic", ...],
   "external": [["Finset.sum", "https://..."], ["Weird.name", null], ...],
-  "nodes": [ { "n": name, "k": kind, "m": moduleIdx, "l": line,
+  "nodes": [ { "n": name, "k": kind, "m": moduleIdx,
                "s": sorried?, "p": propValue?,
                "td": [nodeIdx...], "vd": [nodeIdx...],
                "xt": [extIdx...],  "xv": [extIdx...] } ] }
@@ -63,12 +64,24 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
     else
       valueEdges := valueEdges.insert source ((valueEdges.getD source #[]).push target)
 
-  -- Node index: emitted declarations that have a dependency record.
+  -- Node index: emitted declarations that have a dependency record. The
+  -- modules array holds only modules owning at least one node — upstream
+  -- (no DOCGEN_LOCAL_ROOTS) runs include all of core in `jsonModules`, and
+  -- listing thousands of node-less modules would bloat the JSON and the
+  -- module-level atlas views.
   let mut nodeIdx : Std.HashMap String Nat := {}
   let mut nodeInfos : Array (JsonDeclarationInfo × Nat) := #[]
-  for h : m in 0...jsonModules.size do
-    for decl in jsonModules[m].declarations do
+  let mut moduleNames : Array String := #[]
+  let mut moduleIdx : Std.HashMap String Nat := {}
+  for module in jsonModules do
+    for decl in module.declarations do
       if propValue.contains decl.info.name && !nodeIdx.contains decl.info.name then
+        let m ← match moduleIdx[module.name]? with
+          | some m => pure m
+          | none =>
+            moduleIdx := moduleIdx.insert module.name moduleNames.size
+            moduleNames := moduleNames.push module.name
+            pure (moduleNames.size - 1)
         nodeIdx := nodeIdx.insert decl.info.name nodeInfos.size
         nodeInfos := nodeInfos.push (decl.info, m)
 
@@ -78,13 +91,16 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
   let mut nodesJson : Array Json := #[]
   for (info, modIdx) in nodeInfos do
     let isProof := propValue.getD info.name false
-    let mut refs : Array (Array Json) := #[#[], #[], #[], #[]]  -- td, vd, xt, xv
+    let mut td : Array Json := #[]
+    let mut vd : Array Json := #[]
+    let mut xt : Array Json := #[]
+    let mut xv : Array Json := #[]
     for (targets, isType) in [(typeEdges.getD info.name #[], true),
                               (valueEdges.getD info.name #[], false)] do
       for target in targets do
         match nodeIdx[target]? with
         | some i =>
-          refs := refs.modify (if isType then 0 else 1) (·.push (toJson i))
+          if isType then td := td.push (toJson i) else vd := vd.push (toJson i)
         | none =>
           -- External proof dependencies carry no meaning; drop them.
           if !isType && isProof then continue
@@ -95,17 +111,17 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
               extIdx := extIdx.insert target externals.size
               externals := externals.push (target, link)
               pure (externals.size - 1)
-          refs := refs.modify (if isType then 2 else 3) (·.push (toJson i))
+          if isType then xt := xt.push (toJson i) else xv := xv.push (toJson i)
     nodesJson := nodesJson.push <| Json.mkObj [
-      ("n", toJson info.name), ("k", toJson info.kind), ("m", toJson modIdx), ("l", toJson info.line),
+      ("n", toJson info.name), ("k", toJson info.kind), ("m", toJson modIdx),
       ("s", toJson (sorried.contains info.name)), ("p", toJson isProof),
-      ("td", Json.arr refs[0]!), ("vd", Json.arr refs[1]!),
-      ("xt", Json.arr refs[2]!), ("xv", Json.arr refs[3]!)
+      ("td", Json.arr td), ("vd", Json.arr vd),
+      ("xt", Json.arr xt), ("xv", Json.arr xv)
     ]
 
   let json := Json.mkObj [
     ("v", toJson (1 : Nat)),
-    ("modules", toJson (jsonModules.map (·.name))),
+    ("modules", toJson moduleNames),
     ("external", Json.arr <| externals.map fun (n, l) =>
       Json.arr #[toJson n, toJson l]),
     ("nodes", Json.arr nodesJson)
