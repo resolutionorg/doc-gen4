@@ -15,6 +15,7 @@ import DocGen4.Output.References
 import DocGen4.Output.Bibtex
 import DocGen4.Output.SourceLinker
 import DocGen4.Output.Search
+import DocGen4.Output.DepGraph
 import DocGen4.Output.Tactics
 import DocGen4.Output.ToJson
 import DocGen4.Output.FoundationalTypes
@@ -54,10 +55,16 @@ def htmlOutputSetup (config : SiteBaseContext) (tacticInfo : Array (Process.Tact
   let foundationalTypesHtml := ReaderT.run foundationalTypes config |>.toString
   let navbarHtml := ReaderT.run navbar config |>.toString
   let searchHtml := ReaderT.run search config |>.toString
+  let atlasHtml := ReaderT.run depAtlas config |>.toString
   let referencesHtml := ReaderT.run (references (← collectBackrefs config.buildDir)) config |>.toString
   let tacticsHtml := ReaderT.run (tactics tacticInfo) config |>.toString
   let docGenStatic := #[
     ("style.css", styleCss),
+    ("depgraph.css", depgraphCss),
+    ("depgraph.js", depgraphJs),
+    ("depgraph-decl.js", depgraphDeclJs),
+    ("atlas.js", atlasJs),
+    ("atlas.html", atlasHtml),
     ("favicon.svg", faviconSvg),
     ("declaration-data.js", declarationDataCenterJs),
     ("color-scheme.js", colorSchemeJs),

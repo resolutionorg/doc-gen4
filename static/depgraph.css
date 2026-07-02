@@ -1,0 +1,377 @@
+/* timaeus fork: dep atlas styles (inline panels + atlas page). */
+
+/* --- toggles next to the source link ------------------------------- */
+
+.depgraph_toggles {
+  float: right;
+  margin-right: 0.6em;
+}
+
+.depgraph_toggle {
+  font-size: 0.8em;
+  margin-left: 0.6em;
+  color: var(--link-color);
+  opacity: 0.75;
+  text-decoration: none;
+}
+
+.depgraph_toggle:hover {
+  opacity: 1;
+}
+
+.depgraph_toggle_on {
+  font-weight: bold;
+  opacity: 1;
+}
+
+/* --- panels --------------------------------------------------------- */
+
+.depgraph_panel {
+  clear: both;
+  margin: 0.8em 0 0.4em 0;
+  padding: 0.6em 0.8em;
+  background: var(--code-bg);
+  border-radius: 6px;
+  font-size: 0.92em;
+}
+
+.depgraph_panel_intro {
+  margin-bottom: 0.7em;
+}
+
+.depgraph_panel_footer {
+  margin-top: 0.7em;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+/* --- closure items --------------------------------------------------- */
+
+.depgraph_item {
+  margin: 0.45em 0;
+  padding: 0.35em 0.5em;
+  border-left: 3px solid var(--tags-border-color, #555);
+  background: var(--body-bg);
+  border-radius: 0 4px 4px 0;
+}
+
+.depgraph_item.depgraph_lit {
+  outline: 2px solid var(--link-color);
+}
+
+.depgraph_item_head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
+  flex-wrap: wrap;
+}
+
+.depgraph_item_name code {
+  font-weight: 600;
+}
+
+.depgraph_item_mod {
+  margin-left: auto;
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
+.depgraph_item_sig {
+  margin-top: 0.25em;
+  font-size: 0.92em;
+  overflow-x: auto;
+}
+
+.depgraph_item_sig .decl_header {
+  margin: 0;
+}
+
+.depgraph_item_doc {
+  margin-top: 0.2em;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+.depgraph_kind {
+  font-size: 0.72em;
+  padding: 0.1em 0.45em;
+  border-radius: 8px;
+  background: var(--code-bg);
+  border: 1px solid var(--tags-border-color, #555);
+  white-space: nowrap;
+}
+
+.depgraph_kind_def,
+.depgraph_kind_instance {
+  border-color: var(--def-color);
+}
+
+.depgraph_kind_theorem {
+  border-color: var(--theorem-color);
+}
+
+.depgraph_kind_inductive,
+.depgraph_kind_structure,
+.depgraph_kind_class,
+.depgraph_kind_class_inductive {
+  border-color: var(--structure-and-inductive-color);
+}
+
+.depgraph_kind_axiom,
+.depgraph_kind_opaque {
+  border-color: var(--axiom-and-constant-color);
+}
+
+.depgraph_sorried {
+  font-size: 0.72em;
+  padding: 0.1em 0.45em;
+  border-radius: 8px;
+  color: white;
+  background: #c0392b;
+}
+
+/* --- instances + external frontier ----------------------------------- */
+
+.depgraph_instances {
+  margin-top: 0.5em;
+}
+
+.depgraph_instances summary {
+  cursor: pointer;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.depgraph_externals {
+  margin-top: 0.6em;
+  line-height: 1.9;
+}
+
+.depgraph_ext_label {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+.depgraph_ext_chip {
+  display: inline-block;
+  margin: 0 0.25em;
+  padding: 0.05em 0.4em;
+  border-radius: 8px;
+  background: var(--body-bg);
+  border: 1px solid var(--tags-border-color, #555);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.depgraph_ext_unresolved {
+  opacity: 0.6;
+}
+
+/* --- blast radius clusters -------------------------------------------- */
+
+.depgraph_cluster {
+  margin: 0.25em 0;
+}
+
+.depgraph_cluster summary {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  cursor: pointer;
+  list-style: none;
+}
+
+.depgraph_cluster summary::before {
+  content: "▸";
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
+.depgraph_cluster[open] summary::before {
+  content: "▾";
+}
+
+.depgraph_cluster_label {
+  font-family: monospace;
+  min-width: 11em;
+}
+
+.depgraph_cluster_count {
+  font-size: 0.85em;
+  opacity: 0.8;
+  min-width: 5em;
+  text-align: right;
+}
+
+.depgraph_cluster_bar {
+  display: inline-block;
+  width: 10em;
+  height: 0.65em;
+  background: var(--body-bg);
+  border: 1px solid var(--tags-border-color, #555);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.depgraph_cluster_fill {
+  display: block;
+  height: 100%;
+  background: var(--link-color);
+  opacity: 0.75;
+}
+
+.depgraph_cluster_list {
+  margin: 0.3em 0 0.5em 1.6em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2em 1em;
+}
+
+.depgraph_untouched {
+  margin-top: 0.5em;
+  font-size: 0.85em;
+  opacity: 0.7;
+  font-family: monospace;
+}
+
+/* --- atlas page -------------------------------------------------------- */
+
+#atlas_main {
+  max-width: min(70em, 92vw);
+}
+
+#atlas_intro {
+  opacity: 0.85;
+}
+
+.atlas_hint {
+  font-size: 0.9em;
+  opacity: 0.75;
+}
+
+.atlas_tabs {
+  margin: 1em 0;
+  display: flex;
+  gap: 1.2em;
+  border-bottom: 1px solid var(--tags-border-color, #555);
+  padding-bottom: 0.4em;
+}
+
+.atlas_tab {
+  text-decoration: none;
+  color: var(--text-color);
+  opacity: 0.7;
+}
+
+.atlas_tab_on {
+  opacity: 1;
+  font-weight: bold;
+  color: var(--link-color);
+}
+
+.atlas_kind_filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9em;
+  font-size: 0.9em;
+  margin-bottom: 0.8em;
+}
+
+.atlas_kind_filters label {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+}
+
+.atlas_core_table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.atlas_core_table th {
+  text-align: left;
+  font-size: 0.85em;
+  opacity: 0.75;
+  padding: 0.25em 0.6em;
+}
+
+.atlas_core_table td {
+  padding: 0.25em 0.6em;
+  border-top: 1px solid var(--code-bg);
+  vertical-align: baseline;
+}
+
+.atlas_core_table td .depgraph_kind {
+  margin-right: 0.5em;
+}
+
+.atlas_rank {
+  opacity: 0.5;
+  text-align: right;
+}
+
+.atlas_mass_proof {
+  opacity: 0.7;
+}
+
+.atlas_focus_link {
+  margin-left: 0.7em;
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.atlas_more {
+  display: inline-block;
+  margin-top: 0.6em;
+}
+
+.atlas_matrix_wrap {
+  overflow: auto;
+  max-width: 100%;
+}
+
+.atlas_matrix_tooltip {
+  position: fixed;
+  z-index: 10;
+  padding: 0.2em 0.5em;
+  background: var(--header-bg);
+  border: 1px solid var(--tags-border-color, #555);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.85em;
+  pointer-events: none;
+}
+
+.atlas_matrix_detail h3 {
+  font-family: monospace;
+  font-size: 1em;
+}
+
+.atlas_search {
+  width: 100%;
+  padding: 0.4em 0.6em;
+  font-family: monospace;
+  font-size: 1em;
+  background: var(--body-bg);
+  color: var(--text-color);
+  border: 1px solid var(--tags-border-color, #555);
+  border-radius: 4px;
+}
+
+.atlas_search_results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em 1.1em;
+  margin: 0.5em 0;
+}
+
+.atlas_decl_target {
+  margin: 0.8em 0;
+}
+
+.atlas_decl_panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(26em, 1fr));
+  gap: 1em;
+  align-items: start;
+}
