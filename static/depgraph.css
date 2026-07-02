@@ -518,6 +518,11 @@
   opacity: 0.7;
 }
 
+.atlas_seals {
+  opacity: 0.7;
+  text-align: right;
+}
+
 .atlas_focus_link {
   margin-left: 0.7em;
   font-size: 0.8em;

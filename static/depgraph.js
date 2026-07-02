@@ -208,6 +208,83 @@ export class DepGraph {
   }
 }
 
+/**
+ * For every node, the number of declarations it "seals": the size of its
+ * subtree in the dominator tree of the meaning graph (rooted at a virtual
+ * node over all declarations without meaning-dependents). d seals x when
+ * every use of x anywhere in the project goes through d — x is d's private
+ * implementation, and d is an emergent abstraction boundary. Contrast with
+ * mass: foundational vocabulary has huge mass but seals nothing, because
+ * everything references it directly. Iterative Cooper–Harvey–Kennedy.
+ */
+export function dominatorSeals(graph) {
+  if (graph._seals) return graph._seals;
+  const n = graph.nodes.length;
+  const rev = graph.revMeaning();
+  const roots = [...graph.nodes.keys()].filter((i) => rev[i].length === 0);
+  const R = n;
+  const succ = (v) => (v === R ? roots : graph.meaningDeps(v));
+
+  // Reverse postorder from the virtual root.
+  const order = [];
+  const state = new Int8Array(n + 1);
+  const stack = [[R, 0]];
+  while (stack.length) {
+    const top = stack[stack.length - 1];
+    const v = top[0];
+    if (state[v] === 0) state[v] = 1;
+    const ss = succ(v);
+    if (top[1] < ss.length) {
+      const w = ss[top[1]++];
+      if (state[w] === 0) stack.push([w, 0]);
+    } else {
+      state[v] = 2;
+      order.push(v);
+      stack.pop();
+    }
+  }
+  order.reverse();
+  const rpoNum = new Int32Array(n + 1).fill(-1);
+  order.forEach((v, i) => (rpoNum[v] = i));
+  const preds = Array.from({ length: n + 1 }, () => []);
+  for (const v of order) for (const w of succ(v)) preds[w].push(v);
+
+  const idom = new Int32Array(n + 1).fill(-1);
+  idom[R] = R;
+  const intersect = (a, b) => {
+    while (a !== b) {
+      while (rpoNum[a] > rpoNum[b]) a = idom[a];
+      while (rpoNum[b] > rpoNum[a]) b = idom[b];
+    }
+    return a;
+  };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const v of order) {
+      if (v === R) continue;
+      let next = -1;
+      for (const p of preds[v]) {
+        if (idom[p] === -1) continue;
+        next = next === -1 ? p : intersect(p, next);
+      }
+      if (next !== -1 && idom[v] !== next) {
+        idom[v] = next;
+        changed = true;
+      }
+    }
+  }
+
+  const subSize = new Int32Array(n + 1);
+  for (let k = order.length - 1; k >= 0; k--) {
+    const v = order[k];
+    subSize[v]++;
+    if (v !== R && idom[v] !== -1) subSize[idom[v]] += subSize[v];
+  }
+  graph._seals = graph.nodes.map((_, i) => (rpoNum[i] === -1 ? 0 : subSize[i] - 1));
+  return graph._seals;
+}
+
 /** Lazily fetched `declarations/header-data.bmp`: name → {header, info}. */
 export class HeaderIndex {
   static _promise = null;
