@@ -379,11 +379,6 @@
   cursor: grabbing;
 }
 
-.atlas_force line,
-.atlas_force circle {
-  vector-effect: non-scaling-stroke;
-}
-
 .atlas_force .force_edge {
   stroke: var(--text-color);
   opacity: 0.14;

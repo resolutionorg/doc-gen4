@@ -500,21 +500,21 @@ function mapView(graph, state) {
     }
   });
 
-  // Semantic labelling: dots and edge widths are constant on screen (dot
-  // radii shrink in world units as you zoom in), while label text scales
-  // with zoom (capped at 2.5×). A label is shown iff there is room for it at
-  // the current scale — largest declaration count wins — so zooming in
-  // reveals more labels as space opens up between nodes.
+  // Nodes and edges live in world space (they grow on screen as you zoom
+  // in); labels keep constant on-screen size. Labelling is semantic: a label
+  // is shown iff there is room for it at the current scale — largest
+  // declaration count wins — so zooming in reveals more labels as the world
+  // (and the room around each node) grows relative to the text.
+  const r = nodes.map(radius);
+  nodes.forEach((n, i) => {
+    dotEls[i].setAttribute("r", r[i].toFixed(2));
+    hitEls[i].setAttribute("r", (r[i] + hitPad).toFixed(2));
+  });
   const labelOrder = [...nodes.keys()].sort((a, b) => nodes[b].decls - nodes[a].decls);
   const visibleLabels = new Set();
   const relayout = (viewW) => {
-    const scale = viewW / fullW;
-    const zoom = 1 / scale;
-    const f = baseFont * scale * Math.min(zoom, 2.5);
-    const r = nodes.map((n) => radius(n) * scale);
+    const f = baseFont * (viewW / fullW);
     nodes.forEach((n, i) => {
-      dotEls[i].setAttribute("r", r[i].toFixed(2));
-      hitEls[i].setAttribute("r", ((radius(n) + hitPad) * scale).toFixed(2));
       labelEls[i].setAttribute("y", (y[i] + r[i] + f).toFixed(1));
       labelEls[i].style.fontSize = `${f.toFixed(2)}px`;
     });
