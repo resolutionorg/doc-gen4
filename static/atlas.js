@@ -185,23 +185,84 @@ function moduleMatrix(graph) {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
-  // Topological order, most-depended-on first (dependencies end up lower-left).
-  const usedBy = graph.modules.map(() => []);
-  const pending = uses.map((s) => s.size);
-  for (let a = 0; a < nMods; a++) for (const b of uses[a]) usedBy[b].push(a);
+  // Topological order over the SCC condensation, most-depended-on first
+  // (dependencies end up lower-left). Real module cycles are impossible
+  // (references follow imports), but extraction artifacts — e.g. the same
+  // lemma name declared in two files — can manufacture one; condensing keeps
+  // such a cycle as a small block at the diagonal instead of letting a Kahn
+  // fallback scramble everything downstream of it.
+  const scc = new Int32Array(nMods).fill(-1);
+  let nScc = 0;
+  {
+    // Iterative Tarjan.
+    const index = new Int32Array(nMods).fill(-1);
+    const low = new Int32Array(nMods);
+    const onStack = new Uint8Array(nMods);
+    const stack = [];
+    let counter = 0;
+    for (let root = 0; root < nMods; root++) {
+      if (index[root] !== -1) continue;
+      const work = [[root, 0]];
+      while (work.length) {
+        const frame = work[work.length - 1];
+        const v = frame[0];
+        if (frame[1] === 0) {
+          index[v] = low[v] = counter++;
+          stack.push(v);
+          onStack[v] = 1;
+        }
+        const succ = [...uses[v]];
+        let advanced = false;
+        while (frame[1] < succ.length) {
+          const w = succ[frame[1]++];
+          if (index[w] === -1) {
+            work.push([w, 0]);
+            advanced = true;
+            break;
+          }
+          if (onStack[w]) low[v] = Math.min(low[v], index[w]);
+        }
+        if (advanced) continue;
+        if (low[v] === index[v]) {
+          let w;
+          do {
+            w = stack.pop();
+            onStack[w] = 0;
+            scc[w] = nScc;
+          } while (w !== v);
+          nScc++;
+        }
+        work.pop();
+        if (work.length) {
+          const p = work[work.length - 1][0];
+          low[p] = Math.min(low[p], low[v]);
+        }
+      }
+    }
+  }
+  const sccMembers = Array.from({ length: nScc }, () => []);
+  for (let m = 0; m < nMods; m++) sccMembers[scc[m]].push(m);
+  const sccUses = Array.from({ length: nScc }, () => new Set());
+  for (let a = 0; a < nMods; a++)
+    for (const b of uses[a]) if (scc[a] !== scc[b]) sccUses[scc[a]].add(scc[b]);
+  const usedBy = Array.from({ length: nScc }, () => []);
+  const pending = sccUses.map((s) => s.size);
+  for (let a = 0; a < nScc; a++) for (const b of sccUses[a]) usedBy[b].push(a);
   const order = [];
   let frontier = [];
-  for (let m = 0; m < nMods; m++) if (pending[m] === 0) frontier.push(m);
+  for (let c = 0; c < nScc; c++) if (pending[c] === 0) frontier.push(c);
   while (frontier.length) {
-    frontier.sort((x, y) => graph.modules[x].localeCompare(graph.modules[y]));
+    frontier.sort((x, y) =>
+      graph.modules[sccMembers[x][0]].localeCompare(graph.modules[sccMembers[y][0]]));
     const next = [];
     for (const b of frontier) {
-      order.push(b);
+      for (const m of sccMembers[b].sort((x, y) => graph.modules[x].localeCompare(graph.modules[y]))) {
+        order.push(m);
+      }
       for (const a of usedBy[b]) if (--pending[a] === 0) next.push(a);
     }
     frontier = next;
   }
-  for (let m = 0; m < nMods; m++) if (!order.includes(m)) order.push(m); // cycle fallback
   return { counts, order };
 }
 
