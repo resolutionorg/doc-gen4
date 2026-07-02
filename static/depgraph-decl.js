@@ -33,29 +33,20 @@ function extChip(name, url) {
   return s;
 }
 
-function declHeadRow(graph, headers, id) {
-  const nd = graph.node(id);
-  const head = el("div", "depgraph_item_head");
-  head.appendChild(kindBadge(nd.k));
-  const a = el("a", "depgraph_item_name");
-  a.href = graph.declLink(id);
-  a.appendChild(el("code", null, nd.n));
-  head.appendChild(a);
-  if (nd.s) head.appendChild(el("span", "depgraph_sorried", "sorry"));
-  const mod = el("a", "depgraph_item_mod", graph.modules[nd.m]);
-  mod.href = graph.moduleLink(nd.m);
-  head.appendChild(mod);
-  return head;
-}
-
 function declItem(graph, headers, id, depth) {
   const nd = graph.node(id);
   const item = el("div", "depgraph_item");
   item.dataset.name = nd.n;
   if (depth !== undefined) item.style.setProperty("--depgraph-depth", depth);
-  item.appendChild(declHeadRow(graph, headers, id));
+  const meta = el("span", "depgraph_item_meta");
+  if (nd.s) meta.appendChild(el("span", "depgraph_sorried", "sorry"));
+  const mod = el("a", "depgraph_item_mod", graph.modules[nd.m]);
+  mod.href = graph.moduleLink(nd.m);
+  meta.appendChild(mod);
+  item.appendChild(meta);
   const entry = headers.get(nd.n);
   if (entry) {
+    // The signature already shows the kind and the linked name.
     const sig = el("div", "depgraph_item_sig");
     sig.innerHTML = entry.header;
     absolutizeLinks(sig);
@@ -65,6 +56,14 @@ function declItem(graph, headers, id, depth) {
       const firstPara = doc.split(/\n\s*\n/)[0].replace(/\s+/g, " ");
       item.appendChild(el("div", "depgraph_item_doc", firstPara));
     }
+  } else {
+    const head = el("div", "depgraph_item_head");
+    head.appendChild(kindBadge(nd.k));
+    const a = el("a", "depgraph_item_name");
+    a.href = graph.declLink(id);
+    a.appendChild(el("code", null, nd.n));
+    head.appendChild(a);
+    item.appendChild(head);
   }
   return item;
 }
