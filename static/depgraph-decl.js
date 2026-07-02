@@ -12,7 +12,7 @@
  *   module clusters so the answer reads "the X and Y stuff, not the Z stuff".
  */
 
-import { DepGraph, HeaderIndex, absolutizeLinks, kindBadge } from "./depgraph.js";
+import { DepGraph, HeaderIndex, absolutizeLinks, kindBadge, infoIcon } from "./depgraph.js";
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -76,14 +76,21 @@ export function buildDepsPanel(graph, headers, id) {
   const externals = graph.externalTypeDeps(id);
 
   const intro = el("div", "depgraph_panel_intro");
-  intro.appendChild(el("strong", null, "Statement dependencies. "));
+  intro.appendChild(el("strong", null, "Statement dependencies"));
   intro.appendChild(
     document.createTextNode(
       main.length === 0
-        ? "This statement rests on no other local declarations."
-        : `Everything this statement's meaning rests on, nearest first — \
-${main.length} declaration${main.length === 1 ? "" : "s"}. To believe this \
-result says what you think it says, these are what to check.`
+        ? " — none within this project."
+        : ` — ${main.length + instances.length} declaration${main.length + instances.length === 1 ? "" : "s"} \
+referenced by this statement, directly or transitively, nearest first.`
+    )
+  );
+  intro.appendChild(
+    infoIcon(
+      "The transitive closure of constants appearing in this statement's " +
+        "signature, followed through the bodies of definitions (a definition's " +
+        "body is part of its meaning) but not through proofs. Together these " +
+        "determine what the statement says."
     )
   );
   panel.appendChild(intro);
@@ -123,23 +130,28 @@ export function buildImpactPanel(graph, id) {
   );
 
   const intro = el("div", "depgraph_panel_intro");
-  intro.appendChild(el("strong", null, "Blast radius. "));
+  intro.appendChild(el("strong", null, "Statement dependents"));
   const parts = [];
   if (meaning.size === 0) {
-    parts.push("No other statement's meaning rests on this declaration.");
+    parts.push(" — none: no other statement references this declaration.");
   } else {
     parts.push(
-      `If this declaration does not say what it should, ${meaning.size} downstream \
-declaration${meaning.size === 1 ? " is" : "s are"} about the wrong thing.`
+      ` — ${meaning.size} declaration${meaning.size === 1 ? "" : "s"} reference \
+this one in their statements, directly or transitively.`
     );
   }
   if (proofOnly.size > 0) {
-    parts.push(
-      ` A further ${proofOnly.size} rest on it only through proofs (their statements \
-survive; their truth needs it).`
-    );
+    parts.push(` ${proofOnly.size} more reference it only inside proofs.`);
   }
   intro.appendChild(document.createTextNode(parts.join("")));
+  intro.appendChild(
+    infoIcon(
+      "Statement dependents inherit this declaration's meaning: were it not to " +
+        "say what was intended, their statements would be affected too. " +
+        "Proof-only dependents are unaffected in meaning — only their proofs " +
+        "route through this declaration."
+    )
+  );
   panel.appendChild(intro);
 
   if (meaning.size > 0) {
@@ -172,7 +184,7 @@ survive; their truth needs it).`
         el(
           "div",
           "depgraph_untouched",
-          `untouched: ${untouched.map((c) => c.label).join(", ")}`
+          `none in: ${untouched.map((c) => c.label).join(", ")}`
         )
       );
     }

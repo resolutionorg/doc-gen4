@@ -241,6 +241,84 @@
   font-family: monospace;
 }
 
+/* --- info icons -------------------------------------------------------- */
+
+.depgraph_info {
+  cursor: help;
+  opacity: 0.5;
+  margin-left: 0.4em;
+}
+
+/* --- layered DAG ------------------------------------------------------- */
+
+.atlas_dag_wrap {
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+
+.depgraph_dag .dag_edge {
+  fill: none;
+  stroke: var(--text-color);
+  stroke-width: 1;
+  opacity: 0.22;
+}
+
+.depgraph_dag .dag_edge_back {
+  stroke-dasharray: 4 3;
+  opacity: 0.4;
+}
+
+.depgraph_dag .dag_edge_hot {
+  stroke: var(--link-color);
+  opacity: 0.95;
+}
+
+.depgraph_dag .dag_node rect {
+  fill: var(--code-bg);
+  stroke: var(--tags-border-color, #555);
+  stroke-width: 1.2;
+}
+
+.depgraph_dag .dag_node text {
+  fill: var(--text-color);
+  font-family: 'JuliaMono', monospace;
+  font-size: 11px;
+}
+
+.depgraph_dag .dag_node:hover rect {
+  stroke-width: 2.5;
+}
+
+.depgraph_dag .dag_emph rect {
+  stroke-width: 2.5;
+  fill: var(--body-bg);
+}
+
+.depgraph_dag .dag_kind_def rect,
+.depgraph_dag .dag_kind_instance rect {
+  stroke: var(--def-color);
+}
+
+.depgraph_dag .dag_kind_theorem rect {
+  stroke: var(--theorem-color);
+}
+
+.depgraph_dag .dag_kind_inductive rect,
+.depgraph_dag .dag_kind_structure rect,
+.depgraph_dag .dag_kind_class rect,
+.depgraph_dag .dag_kind_class_inductive rect {
+  stroke: var(--structure-and-inductive-color);
+}
+
+.depgraph_dag .dag_kind_axiom rect,
+.depgraph_dag .dag_kind_opaque rect {
+  stroke: var(--axiom-and-constant-color);
+}
+
+.depgraph_dag .dag_kind_module rect {
+  stroke: var(--link-color);
+}
+
 /* --- atlas page -------------------------------------------------------- */
 
 #atlas_intro {

@@ -10,7 +10,7 @@
  * - decl: focus on one declaration — its statement closure and blast radius.
  */
 
-import { DepGraph, HeaderIndex, kindBadge } from "./depgraph.js";
+import { DepGraph, HeaderIndex, kindBadge, infoIcon, renderDag, closureDag } from "./depgraph.js";
 import { buildDepsPanel, buildImpactPanel } from "./depgraph-decl.js";
 
 const app = document.getElementById("atlas_app");
@@ -84,16 +84,22 @@ function coreView(graph, state) {
     state.proofMass = masses(graph, graph.revProof());
   }
   const container = el("div", "atlas_core");
-  container.appendChild(
-    el(
-      "p",
-      "atlas_hint",
-      "Ranked by meaning mass: the number of declarations whose statements " +
-        "transitively rest on this one. These are the definitions to check first " +
-        "before believing anything downstream. Proof mass additionally counts " +
-        "declarations whose proofs use it."
+  const hint = el(
+    "p",
+    "atlas_hint",
+    "Declarations ranked by meaning mass: the number of declarations that " +
+      "reference this one in their statements, directly or transitively. " +
+      "Proof mass additionally counts references from proofs."
+  );
+  hint.appendChild(
+    infoIcon(
+      "A high meaning mass marks a foundational definition — everything counted " +
+        "depends on it for what it says, so an error in it propagates to all of " +
+        "them. Theorems and instances are excluded by default: their mass is " +
+        "usually small because statements rarely reference them."
     )
   );
+  container.appendChild(hint);
 
   const filters = el("div", "atlas_kind_filters");
   const active = state.coreKinds ?? (state.coreKinds = new Set(CORE_DEFAULT));
@@ -210,9 +216,10 @@ function matrixView(graph, state) {
     el(
       "p",
       "atlas_hint",
-      "Module × module references (row uses column), modules in topological order — " +
-        "foundations top-left. A clean layering is a lower triangle; dense columns are " +
-        "load-bearing modules. Hover for names, click a cell for the crossing references."
+      "Module × module references (row uses column), modules in topological order, " +
+        "foundations top-left. Layering appears as a lower triangle; dense columns " +
+        "are heavily referenced modules. Hover for names, click a cell for the " +
+        "crossing references."
     )
   );
   const { counts, order } = moduleMatrix(graph);
@@ -306,6 +313,71 @@ function matrixView(graph, state) {
 }
 
 /* ------------------------------------------------------------------ */
+/* map view                                                            */
+/* ------------------------------------------------------------------ */
+
+function mapView(graph, state) {
+  const container = el("div", "atlas_map");
+  container.appendChild(
+    el(
+      "p",
+      "atlas_hint",
+      "Module clusters (grouped by name prefix, sized by declaration count) and " +
+        "the references between them. Arrows point downward from a cluster to " +
+        "the clusters it references; dashed edges run against the layering."
+    )
+  );
+  const clusters = graph.moduleClusters();
+  const K = clusters.length;
+  const modToCluster = new Map();
+  clusters.forEach((c, ci) => c.modules.forEach((m) => modToCluster.set(m, ci)));
+  const declCount = new Array(K).fill(0);
+  const counts = new Map();
+  for (let i = 0; i < graph.nodes.length; i++) {
+    const a = modToCluster.get(graph.node(i).m);
+    declCount[a]++;
+    for (const d of graph.proofDeps(i)) {
+      const b = modToCluster.get(graph.node(d).m);
+      if (a !== b) counts.set(a * K + b, (counts.get(a * K + b) ?? 0) + 1);
+    }
+  }
+  // Layer by longest chain of dependents above; cycles keep their partial layer.
+  const usesOf = Array.from({ length: K }, () => []);
+  const pendingUsers = new Array(K).fill(0);
+  for (const key of counts.keys()) {
+    const a = Math.floor(key / K);
+    const b = key % K;
+    usesOf[a].push(b);
+    pendingUsers[b]++;
+  }
+  const layer = new Array(K).fill(0);
+  let frontier = [];
+  for (let c = 0; c < K; c++) if (!pendingUsers[c]) frontier.push(c);
+  while (frontier.length) {
+    const next = [];
+    for (const a of frontier) {
+      for (const b of usesOf[a]) {
+        layer[b] = Math.max(layer[b], layer[a] + 1);
+        if (--pendingUsers[b] === 0) next.push(b);
+      }
+    }
+    frontier = next;
+  }
+  const nodes = clusters.map((c, ci) => ({
+    id: ci,
+    label: `${c.label} · ${declCount[ci]}`,
+    title: `${c.label}: ${c.modules.length} modules, ${declCount[ci]} declarations`,
+    layer: layer[ci],
+    kind: "module",
+  }));
+  const edges = [...counts.entries()].map(([key, w]) => [Math.floor(key / K), key % K, w]);
+  const wrap = el("div", "atlas_dag_wrap");
+  wrap.appendChild(renderDag(nodes, edges));
+  container.appendChild(wrap);
+  return container;
+}
+
+/* ------------------------------------------------------------------ */
 /* decl view                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -341,6 +413,12 @@ function declView(graph, state) {
       head.appendChild(sig);
     }
     target.appendChild(head);
+    const closureSize = graph.closure(id).length;
+    if (closureSize > 0 && closureSize <= 80) {
+      const wrap = el("div", "atlas_dag_wrap");
+      wrap.appendChild(closureDag(graph, id));
+      target.appendChild(wrap);
+    }
     const left = el("div", "atlas_decl_col");
     const right = el("div", "atlas_decl_col");
     left.appendChild(buildDepsPanel(graph, headers, id));
@@ -388,6 +466,7 @@ DepGraph.init()
 
     const views = {
       core: () => coreView(graph, state),
+      map: () => mapView(graph, state),
       matrix: () => matrixView(graph, state),
       decl: () => declView(graph, state),
     };
@@ -406,7 +485,8 @@ DepGraph.init()
       show("decl");
     };
     for (const [view, label] of [
-      ["core", "trust core"],
+      ["core", "core"],
+      ["map", "map"],
       ["matrix", "module matrix"],
       ["decl", "declaration"],
     ]) {

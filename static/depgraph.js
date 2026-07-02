@@ -239,3 +239,206 @@ export function kindBadge(kind) {
   span.textContent = kind;
   return span;
 }
+
+/** A hoverable ⓘ carrying interpretive guidance, so running copy can stay factual. */
+export function infoIcon(text) {
+  const s = document.createElement("span");
+  s.className = "depgraph_info";
+  s.textContent = "ⓘ";
+  s.title = text;
+  return s;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * Render a small layered DAG as an SVG element. Layer 0 is drawn at the top;
+ * edges run from a node to nodes in higher layers (its dependencies below it).
+ *
+ * nodes: [{id, label, title?, href?, kind?, layer, emphasis?, weight?}]
+ * edges: [[fromId, toId, weight?]]
+ *
+ * This is a deliberate anti-hairball: it is only used for graphs that fit on
+ * a screen (a statement closure, a cluster map), with layers given by the
+ * data, one barycenter pass for crossing reduction, and no interactivity
+ * beyond hover-highlighting and click-through.
+ */
+export function renderDag(nodes, edges) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  let layers = [];
+  for (const n of nodes) {
+    (layers[n.layer] ??= []).push(n);
+  }
+  layers = Array.from(layers, (l) => l ?? []);
+  const out = new Map(nodes.map((n) => [n.id, []]));
+  const inc = new Map(nodes.map((n) => [n.id, []]));
+  for (const [a, b] of edges) {
+    if (byId.has(a) && byId.has(b)) {
+      out.get(a).push(b);
+      inc.get(b).push(a);
+    }
+  }
+
+  // Barycenter ordering: two sweeps against the previous layer's positions.
+  const posIn = new Map();
+  const sortLayer = (layer, neighborsOf) => {
+    const bary = (n) => {
+      const ns = neighborsOf(n.id).filter((m) => posIn.has(m));
+      if (!ns.length) return posIn.get(n.id) ?? 0;
+      return ns.reduce((acc, m) => acc + posIn.get(m), 0) / ns.length;
+    };
+    layer.sort((a, b) => bary(a) - bary(b) || a.label.localeCompare(b.label));
+    layer.forEach((n, i) => posIn.set(n.id, i));
+  };
+  layers[0]?.forEach((n, i) => posIn.set(n.id, i));
+  for (let l = 1; l < layers.length; l++) sortLayer(layers[l] ?? [], (id) => inc.get(id));
+  for (let l = layers.length - 2; l >= 0; l--) sortLayer(layers[l] ?? [], (id) => out.get(id));
+
+  // Geometry. Layers wider than maxW wrap into multiple rows (a row break
+  // within a layer carries no meaning; it only keeps the drawing on screen).
+  const charW = 7.2;
+  const nodeH = 22;
+  const rowH = 64;
+  const wrapRowH = 34;
+  const gap = 16;
+  const maxW = 740;
+  const widthOf = (n) => Math.min(200, Math.max(50, n.label.length * charW + 18));
+  const rows = [];
+  for (const layer of layers) {
+    let row = [];
+    let w = 0;
+    let isWrap = false;
+    for (const n of layer) {
+      const nw = widthOf(n) + gap;
+      if (row.length && w + nw > maxW) {
+        rows.push({ nodes: row, isWrap });
+        row = [];
+        w = 0;
+        isWrap = true;
+      }
+      row.push(n);
+      w += nw;
+    }
+    if (row.length) rows.push({ nodes: row, isWrap });
+  }
+  const rowWidth = (row) => row.reduce((acc, n) => acc + widthOf(n) + gap, -gap);
+  const totalW = Math.min(maxW, Math.max(...rows.map((r) => rowWidth(r.nodes)))) + 20;
+  const xy = new Map();
+  let y = 6;
+  rows.forEach((r, i) => {
+    if (i > 0) y += r.isWrap ? wrapRowH : rowH;
+    let x = (totalW - rowWidth(r.nodes)) / 2;
+    for (const n of r.nodes) {
+      xy.set(n.id, { x, y, w: widthOf(n) });
+      x += widthOf(n) + gap;
+    }
+  });
+  const totalH = y + nodeH + 12;
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
+  svg.setAttribute("width", totalW);
+  svg.setAttribute("class", "depgraph_dag");
+
+  const edgeEls = new Map(nodes.map((n) => [n.id, []]));
+  for (const [a, b, weight] of edges) {
+    const pa = xy.get(a);
+    const pb = xy.get(b);
+    if (!pa || !pb) continue;
+    const x1 = pa.x + pa.w / 2;
+    const y1 = pa.y + nodeH;
+    const x2 = pb.x + pb.w / 2;
+    const y2 = pb.y;
+    const path = document.createElementNS(SVG_NS, "path");
+    const my = (y1 + y2) / 2;
+    path.setAttribute("d", `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`);
+    path.setAttribute("class", "dag_edge" + (byId.get(a).layer >= byId.get(b).layer ? " dag_edge_back" : ""));
+    if (weight) path.setAttribute("stroke-width", Math.min(4, 1 + Math.log2(weight) / 2));
+    svg.appendChild(path);
+    edgeEls.get(a).push(path);
+    edgeEls.get(b).push(path);
+  }
+
+  for (const n of nodes) {
+    const p = xy.get(n.id);
+    const g = document.createElementNS(SVG_NS, "g");
+    g.setAttribute("class", `dag_node dag_kind_${(n.kind ?? "def").replace(/ /g, "_")}` + (n.emphasis ? " dag_emph" : ""));
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", p.x);
+    rect.setAttribute("y", p.y);
+    rect.setAttribute("width", p.w);
+    rect.setAttribute("height", nodeH);
+    rect.setAttribute("rx", 5);
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", p.x + p.w / 2);
+    text.setAttribute("y", p.y + nodeH / 2 + 4);
+    text.setAttribute("text-anchor", "middle");
+    text.textContent = n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label;
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent = n.title ?? n.label;
+    g.append(title, rect, text);
+    if (n.href) {
+      const a = document.createElementNS(SVG_NS, "a");
+      a.setAttribute("href", n.href);
+      a.appendChild(g);
+      svg.appendChild(a);
+    } else {
+      svg.appendChild(g);
+    }
+    g.addEventListener("mouseenter", () => {
+      for (const e of edgeEls.get(n.id)) e.classList.add("dag_edge_hot");
+    });
+    g.addEventListener("mouseleave", () => {
+      for (const e of edgeEls.get(n.id)) e.classList.remove("dag_edge_hot");
+    });
+  }
+  return svg;
+}
+
+/**
+ * The statement-closure DAG for one declaration: the target on top, its
+ * transitive statement dependencies layered by distance. Instance nodes are
+ * collapsed out (edges route through them to what they use).
+ */
+export function closureDag(graph, start) {
+  const closure = graph.closure(start);
+  const inSet = new Map(closure.map(({ id, depth }) => [id, depth]));
+  inSet.set(start, 0);
+  const keep = (i) => graph.node(i).k !== "instance" || i === start;
+  const nodes = [...inSet.entries()]
+    .filter(([id]) => keep(id))
+    .map(([id, depth]) => ({
+      id,
+      label: graph.node(id).n.split(".").pop(),
+      title: graph.node(id).n,
+      href: graph.declLink(id),
+      kind: graph.node(id).k,
+      layer: depth,
+      emphasis: id === start,
+    }));
+  const edges = [];
+  const seen = new Set();
+  const targetsOf = (u) => {
+    // Route edges through collapsed instance nodes.
+    const acc = [];
+    const walk = (d, guard) => {
+      if (!inSet.has(d) || guard.has(d)) return;
+      if (keep(d)) return acc.push(d);
+      guard.add(d);
+      for (const e of graph.meaningDeps(d)) walk(e, guard);
+    };
+    for (const d of graph.meaningDeps(u)) walk(d, new Set());
+    return acc;
+  };
+  for (const [u] of inSet.entries()) {
+    if (!keep(u)) continue;
+    for (const d of targetsOf(u)) {
+      const key = `${u},${d}`;
+      if (u !== d && !seen.has(key)) {
+        seen.add(key);
+        edges.push([u, d]);
+      }
+    }
+  }
+  return renderDag(nodes, edges);
+}
