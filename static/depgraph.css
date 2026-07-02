@@ -70,8 +70,15 @@
   font-weight: 600;
 }
 
+.depgraph_item_meta {
+  float: right;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  margin-left: 1em;
+}
+
 .depgraph_item_mod {
-  margin-left: auto;
   font-size: 0.8em;
   opacity: 0.6;
 }
@@ -235,10 +242,6 @@
 }
 
 /* --- atlas page -------------------------------------------------------- */
-
-#atlas_main {
-  max-width: min(70em, 92vw);
-}
 
 #atlas_intro {
   opacity: 0.85;

@@ -122,11 +122,11 @@ def depAtlas : BaseHtmlM Html := do templateExtends (baseHtml "Dependency atlas"
     <main id="atlas_main">
       <h1>Dependency atlas</h1>
       <p id="atlas_intro">
-        The declaration-level dependency structure of this project.
-        {.raw "<b>Meaning</b>"} edges follow statements (and definition bodies);
-        {.raw "<b>proof</b>"} edges additionally follow what proofs use.
-        Pick a declaration to see what its statement rests on and what rests on it,
-        or study the load-bearing core and the module matrix.
+        {.raw "The declaration-level dependency structure of this project. \
+<b>Meaning</b> edges follow statements (and definition bodies); <b>proof</b> \
+edges additionally follow what proofs use. Pick a declaration to see what its \
+statement rests on and what rests on it, or study the load-bearing core and \
+the module matrix."}
       </p>
       <div id="atlas_app">Loading dependency data…</div>
       <script type="module" src="./atlas.js"></script>
