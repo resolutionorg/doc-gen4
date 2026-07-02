@@ -387,10 +387,15 @@
   opacity: 0.14;
 }
 
-.atlas_force .force_node circle {
+.atlas_force .force_node .force_dot {
   stroke: var(--body-bg);
   stroke-width: 1px;
   fill-opacity: 0.8;
+}
+
+.atlas_force .force_node .force_hit {
+  fill: transparent;
+  stroke: none;
 }
 
 /* Hover: color the two dependency cones; everything else stays put. */
@@ -407,19 +412,19 @@
   opacity: 0.65;
 }
 
-.atlas_force .force_node.force_up circle {
+.atlas_force .force_node.force_up .force_dot {
   stroke: var(--link-color);
   stroke-width: 2px;
   fill-opacity: 1;
 }
 
-.atlas_force .force_node.force_down circle {
+.atlas_force .force_node.force_down .force_dot {
   stroke: var(--structure-and-inductive-color);
   stroke-width: 2px;
   fill-opacity: 1;
 }
 
-.atlas_force .force_node.force_hot circle {
+.atlas_force .force_node.force_hot .force_dot {
   stroke: var(--text-color);
   stroke-width: 2.5px;
   fill-opacity: 1;
