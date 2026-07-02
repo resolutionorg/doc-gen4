@@ -38,6 +38,7 @@ def baseHtmlGenerator (title : String) (site : Array Html) : BaseHtmlM Html := d
         <script type="module" src={s!"{← getRoot}how-about.js"}></script>
         <script type="module" src={s!"{← getRoot}instances.js"}></script>
         <script type="module" src={s!"{← getRoot}importedBy.js"}></script>
+        <script type="module" src={s!"{← getRoot}depgraph-decl.js"}></script>
       </head>
 
       <body>
