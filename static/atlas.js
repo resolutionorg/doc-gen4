@@ -10,7 +10,7 @@
  * - decl: focus on one declaration — its statement closure and blast radius.
  */
 
-import { DepGraph, HeaderIndex, kindBadge, infoIcon, forceLayout, closureDag, dominatorSeals } from "./depgraph.js";
+import { DepGraph, HeaderIndex, kindBadge, infoIcon, forceLayout, closureDag } from "./depgraph.js";
 import { buildDepsPanel, buildImpactPanel } from "./depgraph-decl.js";
 
 const app = document.getElementById("atlas_app");
@@ -84,7 +84,6 @@ function coreView(graph, state) {
   if (!state.meaningMass) {
     state.meaningMass = masses(graph, graph.revMeaning());
     state.proofMass = masses(graph, graph.revProof());
-    state.seals = dominatorSeals(graph);
   }
   const container = el("div", "atlas_core");
   const hint = el(
@@ -92,19 +91,14 @@ function coreView(graph, state) {
     "atlas_hint",
     "Declarations ranked by meaning mass: the number of declarations that " +
       "reference this one in their statements, directly or transitively. " +
-      "Proof mass additionally counts references from proofs. Seals counts " +
-      "declarations only ever used through this one."
+      "Proof mass additionally counts references from proofs."
   );
   hint.appendChild(
     infoIcon(
       "A high meaning mass marks a foundational definition — everything counted " +
         "depends on it for what it says, so an error in it propagates to all of " +
         "them. Theorems and instances are excluded by default: their mass is " +
-        "usually small because statements rarely reference them. A nonzero " +
-        "seals count marks an emergent abstraction boundary: every use of the " +
-        "sealed declarations routes through this one. Foundational vocabulary " +
-        "tends to have huge mass and seal nothing (everything references it " +
-        "directly); a flat codebase has almost no sealing anywhere."
+        "usually small because statements rarely reference them."
     )
   );
   container.appendChild(hint);
@@ -140,7 +134,7 @@ function coreView(graph, state) {
       .sort((a, b) => state.meaningMass[b] - state.meaningMass[a] || state.proofMass[b] - state.proofMass[a]);
     const maxMass = Math.max(1, ...ranked.slice(0, 1).map((i) => state.meaningMass[i]));
     table.innerHTML =
-      "<thead><tr><th></th><th>declaration</th><th>meaning mass</th><th>proof mass</th><th>seals</th></tr></thead>";
+      "<thead><tr><th></th><th>declaration</th><th>meaning mass</th><th>proof mass</th></tr></thead>";
     const tbody = el("tbody");
     ranked.slice(0, limit).forEach((i, rank) => {
       const nd = graph.node(i);
@@ -167,7 +161,6 @@ function coreView(graph, state) {
       massTd.appendChild(el("span", null, ` ${state.meaningMass[i]}`));
       tr.appendChild(massTd);
       tr.appendChild(el("td", "atlas_mass_proof", String(state.proofMass[i])));
-      tr.appendChild(el("td", "atlas_seals", state.seals[i] ? String(state.seals[i]) : "·"));
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
