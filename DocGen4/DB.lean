@@ -85,6 +85,8 @@ structure WriteDB where
   saveInternalName (name : Lean.Name) (targetModule : String) (targetPosition : Int64) : IO Unit
   /-- Save a tactic defined in this module -/
   saveTactic (modName : String) (tactic : Process.TacticInfo Process.MarkdownDocstring) : IO Unit
+  /-- timaeus fork: save one declaration's collapsed dependency record -/
+  saveDepEntry (modName : String) (entry : Process.DepEntry) : IO Unit
 
 def WriteDB.saveDocstring (db : WriteDB) (modName : String) (position : Int64) (text : String ⊕ Lean.VersoDocString) : IO Unit :=
   match text with
@@ -153,6 +155,8 @@ private structure WriteStmts where
   saveInternalNameStmt : SQLite.Stmt
   saveTacticStmt : SQLite.Stmt
   saveTacticTagStmt : SQLite.Stmt
+  saveDepNodeStmt : SQLite.Stmt
+  saveDepEdgeStmt : SQLite.Stmt
 
 private def WriteStmts.prepare (sqlite : SQLite) (values : DocstringValues) : IO WriteStmts := do
   pure {
@@ -187,6 +191,8 @@ private def WriteStmts.prepare (sqlite : SQLite) (values : DocstringValues) : IO
     saveInternalNameStmt := ← sqlite.prepare "INSERT OR IGNORE INTO internal_names (name, target_module, target_position) VALUES (?, ?, ?)"
     saveTacticStmt := ← sqlite.prepare "INSERT INTO tactics (module_name, internal_name, user_name, doc_string) VALUES (?, ?, ?, ?)"
     saveTacticTagStmt := ← sqlite.prepare "INSERT INTO tactic_tags (module_name, internal_name, tag) VALUES (?, ?, ?)"
+    saveDepNodeStmt := ← sqlite.prepare "INSERT OR REPLACE INTO dep_nodes (name, module_name, prop_value) VALUES (?, ?, ?)"
+    saveDepEdgeStmt := ← sqlite.prepare "INSERT OR IGNORE INTO dep_edges (source, target, is_type) VALUES (?, ?, ?)"
   }
 
 private def WriteStmts.deleteModule (s : WriteStmts) (modName : String) : IO Unit := withDbContext "write:delete:modules" do
@@ -399,6 +405,20 @@ private def WriteStmts.saveTactic (s : WriteStmts) (modName : String) (tactic : 
     s.saveTacticTagStmt.bind 3 tag.toString
     run s.saveTacticTagStmt
 
+private def WriteStmts.saveDepEntry (s : WriteStmts) (modName : String) (entry : Process.DepEntry) : IO Unit := do
+  withDbContext "write:insert:dep_nodes" do
+    s.saveDepNodeStmt.bind 1 entry.name.toString
+    s.saveDepNodeStmt.bind 2 modName
+    s.saveDepNodeStmt.bind 3 entry.propValue
+    run s.saveDepNodeStmt
+  withDbContext "write:insert:dep_edges" do
+    for (targets, isType) in [(entry.typeDeps, true), (entry.valueDeps, false)] do
+      for target in targets do
+        s.saveDepEdgeStmt.bind 1 entry.name.toString
+        s.saveDepEdgeStmt.bind 2 target.toString
+        s.saveDepEdgeStmt.bind 3 isType
+        run s.saveDepEdgeStmt
+
 def ensureWriteDb (values : DocstringValues) (dbFile : System.FilePath) : IO WriteDB := do
   let sqlite ← getDb dbFile
   let ws ← WriteStmts.prepare sqlite values
@@ -430,6 +450,7 @@ def ensureWriteDb (values : DocstringValues) (dbFile : System.FilePath) : IO Wri
     saveNameOnly modName position kind name type declRange := writeMutex.atomically do (← get).saveNameOnly modName position kind name type declRange
     saveInternalName name targetModule targetPosition := writeMutex.atomically do (← get).saveInternalName name targetModule targetPosition
     saveTactic modName tactic := writeMutex.atomically do (← get).saveTactic modName tactic
+    saveDepEntry modName entry := writeMutex.atomically do (← get).saveDepEntry modName entry
   }
 
 structure DBM.Context where
@@ -599,6 +620,10 @@ def updateModuleDb (values : DocstringValues)
           -- Save tactics defined in this module
           for tactic in modInfo.tactics do
             db.saveTactic modNameStr tactic
+          -- timaeus fork: save collapsed dependency records for the dep atlas
+          if let some entries := doc.deps[modName]? then
+            for entry in entries do
+              db.saveDepEntry modNameStr entry
           pure ()
   pure ()
 

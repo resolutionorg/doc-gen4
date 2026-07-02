@@ -148,6 +148,11 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
   -- Generate the search index (declaration-data.bmp)
   htmlOutputIndex baseConfig jsonModules allTactics
 
+  -- timaeus fork: emit the dep atlas graph, and the header index that the
+  -- statement-closure panels render declaration signatures from.
+  depGraphOutput baseConfig dbPath jsonModules
+  headerDataOutput buildDir
+
   -- Update navbar to include all modules on disk
   updateNavbarFromDisk buildDir
   if let .some manifestOutput := manifestOutput? then
