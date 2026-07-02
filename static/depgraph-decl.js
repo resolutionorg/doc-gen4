@@ -1,18 +1,19 @@
 /**
  * timaeus fork: inline dep-atlas panels on declaration pages.
  *
- * Every rendered declaration gets two toggles next to its source link:
+ * Every rendered declaration gets two mutually exclusive toggles next to its
+ * source link:
  *
  * - "deps": the statement closure — every local declaration this statement's
- *   meaning rests on, gathered in one place in reading order (each entry
- *   before the things it depends on), with full signatures, plus the external
- *   (Mathlib/core) frontier.
- * - "used by": the blast radius — every declaration whose statement would be
- *   about the wrong thing if this one turned out to be wrong, grouped into
- *   module clusters so the answer reads "the X and Y stuff, not the Z stuff".
+ *   meaning rests on, as a small layered DAG plus a list in reading order
+ *   (each entry before the things it depends on) with full signatures, plus
+ *   the external (Mathlib/core) frontier.
+ * - "used by": every declaration whose statement transitively references this
+ *   one, grouped into module clusters so the answer reads "the X and Y stuff,
+ *   not the Z stuff".
  */
 
-import { DepGraph, HeaderIndex, absolutizeLinks, kindBadge, infoIcon } from "./depgraph.js";
+import { DepGraph, HeaderIndex, absolutizeLinks, kindBadge, infoIcon, closureDag } from "./depgraph.js";
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -68,7 +69,7 @@ function declItem(graph, headers, id, depth) {
   return item;
 }
 
-export function buildDepsPanel(graph, headers, id) {
+export function buildDepsPanel(graph, headers, id, { dag = true } = {}) {
   const panel = el("div", "depgraph_panel");
   const closure = graph.closure(id);
   const main = closure.filter(({ id: i }) => graph.node(i).k !== "instance");
@@ -95,6 +96,12 @@ referenced by this statement, directly or transitively, nearest first.`
   );
   panel.appendChild(intro);
 
+  if (dag && main.length > 1 && closure.length <= 80) {
+    const wrap = el("div", "atlas_dag_wrap");
+    wrap.appendChild(closureDag(graph, id));
+    panel.appendChild(wrap);
+  }
+
   for (const { id: i, depth } of main) {
     panel.appendChild(declItem(graph, headers, i, depth));
   }
@@ -117,7 +124,7 @@ referenced by this statement, directly or transitively, nearest first.`
     panel.appendChild(ext);
   }
 
-  panel.appendChild(atlasFooter(graph, id, "deps"));
+  panel.appendChild(atlasFooter(graph, id));
   enableCrossHighlight(panel);
   return panel;
 }
@@ -190,14 +197,14 @@ this one in their statements, directly or transitively.`
     }
   }
 
-  panel.appendChild(atlasFooter(graph, id, "impact"));
+  panel.appendChild(atlasFooter(graph, id));
   return panel;
 }
 
-function atlasFooter(graph, id, view) {
+function atlasFooter(graph, id) {
   const footer = el("div", "depgraph_panel_footer");
   const a = el("a", null, "open in dependency atlas →");
-  a.href = `${SITE_ROOT}atlas.html#decl=${encodeURIComponent(graph.node(id).n)}&view=${view}`;
+  a.href = `${SITE_ROOT}atlas.html#decl=${encodeURIComponent(graph.node(id).n)}`;
   footer.appendChild(a);
   return footer;
 }
@@ -230,21 +237,33 @@ function addToggles(graph, declDiv) {
 
   const box = el("div", "depgraph_toggles");
   const panels = {};
+  const btns = {};
+  let open = null;
+  const setOpen = async (label, build) => {
+    if (open === label) {
+      panels[label].style.display = "none";
+      btns[label].classList.remove("depgraph_toggle_on");
+      open = null;
+      return;
+    }
+    if (open) {
+      panels[open].style.display = "none";
+      btns[open].classList.remove("depgraph_toggle_on");
+    }
+    open = label;
+    btns[label].classList.add("depgraph_toggle_on");
+    if (!panels[label]) {
+      panels[label] = await build();
+      inner.appendChild(panels[label]);
+    } else {
+      panels[label].style.display = "";
+    }
+  };
   const mkToggle = (label, build) => {
     const btn = el("a", "depgraph_toggle", label);
     btn.href = "javascript:void(0)";
-    btn.addEventListener("click", async () => {
-      if (panels[label]) {
-        const hidden = panels[label].style.display === "none";
-        panels[label].style.display = hidden ? "" : "none";
-        btn.classList.toggle("depgraph_toggle_on", hidden);
-        return;
-      }
-      btn.classList.add("depgraph_toggle_on");
-      const panel = await build();
-      panels[label] = panel;
-      inner.appendChild(panel);
-    });
+    btn.addEventListener("click", () => setOpen(label, build));
+    btns[label] = btn;
     box.appendChild(btn);
   };
   mkToggle("deps", async () => buildDepsPanel(graph, await HeaderIndex.init(), id));
