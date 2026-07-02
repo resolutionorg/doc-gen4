@@ -254,11 +254,16 @@ def process (task : AnalyzeTask) : MetaM AnalyzerResult := do
         for mem in module.members do
           if let .docInfo i := mem then
             if i.shouldRender then
-              try
-                if let some entry ← DepGraph.depEntryFor depCtx i.getName then
-                  entries := entries.push entry
-              catch e =>
-                IO.println s!"WARNING: dependency extraction failed for {i.getName}: {← e.toMessageData.toString}"
+              -- tryCatchRuntimeEx so heartbeat timeouts (runtime exceptions,
+              -- invisible to plain try/catch) cost one entry, not the ingest.
+              entries ← tryCatchRuntimeEx
+                (do
+                  if let some entry ← DepGraph.depEntryFor depCtx i.getName then
+                    return entries.push entry
+                  return entries)
+                (fun e => do
+                  IO.println s!"WARNING: dependency extraction failed for {i.getName}: {← e.toMessageData.toString}"
+                  return entries)
         acc := acc.insert moduleName entries
       return acc
     go.run' {}
