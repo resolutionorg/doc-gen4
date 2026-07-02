@@ -351,6 +351,17 @@ CREATE TABLE IF NOT EXISTS declaration_attrs (
   FOREIGN KEY (module_name, position) REFERENCES name_info(module_name, position) ON DELETE CASCADE
 );
 
+-- timaeus fork: anonymous `example` declarations captured verbatim from module
+-- sources by a parser-only pass. Their declaration range lives in
+-- declaration_ranges under the same (module_name, position) key.
+CREATE TABLE IF NOT EXISTS module_examples (
+  module_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  PRIMARY KEY (module_name, position),
+  FOREIGN KEY (module_name) REFERENCES modules(name) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS tactics (
   module_name TEXT NOT NULL,
   internal_name TEXT NOT NULL,

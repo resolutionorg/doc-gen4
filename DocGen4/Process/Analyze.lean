@@ -14,6 +14,7 @@ import DocGen4.Process.Base
 import DocGen4.Process.Hierarchy
 import DocGen4.Process.DocInfo
 import DocGen4.Process.DepGraph
+import DocGen4.Process.Examples
 
 namespace DocGen4.Process
 
@@ -29,6 +30,7 @@ Member of a module, either a declaration or some module doc string.
 inductive ModuleMember where
 | docInfo (info : DocInfo) : ModuleMember
 | modDoc (doc : ModuleDoc) : ModuleMember
+| exampleDecl (ex : ExampleDecl) : ModuleMember
 deriving Inhabited
 
 /-- Information about a tactic declaration which will be rendered on the Tactics page.
@@ -106,6 +108,7 @@ namespace ModuleMember
 def getDeclarationRange : ModuleMember → DeclarationRange
 | docInfo i => i.getDeclarationRange
 | modDoc i => i.declarationRange
+| exampleDecl i => i.declarationRange
 
 /--
 An order for module members, based on their declaration range.
@@ -116,14 +119,17 @@ def order (l r : ModuleMember) : Bool :=
 def getName : ModuleMember → Name
 | docInfo i => i.getName
 | modDoc _ => Name.anonymous
+| exampleDecl _ => Name.anonymous
 
 def getDocString : ModuleMember → Option (String ⊕ VersoDocString)
 | docInfo i => i.getDocString
 | modDoc i => some (.inl i.doc)
+| exampleDecl _ => none
 
 def shouldRender : ModuleMember → Bool
 | docInfo i => i.shouldRender
 | modDoc _ => true
+| exampleDecl _ => true
 
 end ModuleMember
 
@@ -220,6 +226,19 @@ def process (task : AnalyzeTask) : MetaM AnalyzerResult := do
           IO.println s!"WARNING: Failed to obtain information for: {name}: {← e.toMessageData.toString}"
         return res
       )
+
+  -- timaeus fork: parser-only pass collecting `example` commands from each module's
+  -- source file. Examples never reach the environment (they are elaborated inside
+  -- `withoutModifyingEnv`), so this is the only way to show them. Mirrors the dep
+  -- extraction gating below: skipped for the prefix task (`genCore`) and when
+  -- DOCGEN_EXAMPLES=0. Failures degrade to "no examples" per module.
+  let examplesEnabled := (← IO.getEnv "DOCGEN_EXAMPLES") != some "0"
+  if examplesEnabled && task matches .analyzeConcreteModules _ then
+    for (moduleName, module) in res.toArray do
+      let examples ← extractExamples env moduleName
+      if !examples.isEmpty then
+        res := res.insert moduleName
+          { module with members := module.members ++ examples.map ModuleMember.exampleDecl }
 
   -- TODO: This could probably be faster if we did sorted insert above instead
   for (moduleName, module) in res.toArray do

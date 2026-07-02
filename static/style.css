@@ -600,6 +600,19 @@ main h2, main h3, main h4, main h5, main h6 {
     border-top: 2px solid var(--axiom-and-constant-color);
 }
 
+/* timaeus fork: anonymous `example` blocks, captured from source */
+.example {
+    border-left: 10px solid var(--theorem-color);
+    border-top: 2px solid var(--theorem-color);
+}
+
+.example .example_source {
+    font-size: 92%;
+    font-family: 'JuliaMono', monospace;
+    margin: 8px 0;
+    padding: 4px;
+}
+
 .structure, .inductive, .class {
     border-left: 10px solid var(--structure-and-inductive-color);
     border-top: 2px solid var(--structure-and-inductive-color);

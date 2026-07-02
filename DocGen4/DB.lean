@@ -85,6 +85,8 @@ structure WriteDB where
   saveInternalName (name : Lean.Name) (targetModule : String) (targetPosition : Int64) : IO Unit
   /-- Save a tactic defined in this module -/
   saveTactic (modName : String) (tactic : Process.TacticInfo Process.MarkdownDocstring) : IO Unit
+  /-- timaeus fork: save the source text of an `example` declaration -/
+  saveExample (modName : String) (position : Int64) (source : String) : IO Unit
   /-- timaeus fork: save one declaration's collapsed dependency record -/
   saveDepEntry (modName : String) (entry : Process.DepEntry) : IO Unit
 
@@ -155,6 +157,7 @@ private structure WriteStmts where
   saveInternalNameStmt : SQLite.Stmt
   saveTacticStmt : SQLite.Stmt
   saveTacticTagStmt : SQLite.Stmt
+  saveExampleStmt : SQLite.Stmt
   saveDepNodeStmt : SQLite.Stmt
   saveDepEdgeStmt : SQLite.Stmt
 
@@ -191,6 +194,7 @@ private def WriteStmts.prepare (sqlite : SQLite) (values : DocstringValues) : IO
     saveInternalNameStmt := ← sqlite.prepare "INSERT OR IGNORE INTO internal_names (name, target_module, target_position) VALUES (?, ?, ?)"
     saveTacticStmt := ← sqlite.prepare "INSERT INTO tactics (module_name, internal_name, user_name, doc_string) VALUES (?, ?, ?, ?)"
     saveTacticTagStmt := ← sqlite.prepare "INSERT INTO tactic_tags (module_name, internal_name, tag) VALUES (?, ?, ?)"
+    saveExampleStmt := ← sqlite.prepare "INSERT INTO module_examples (module_name, position, source) VALUES (?, ?, ?)"
     saveDepNodeStmt := ← sqlite.prepare "INSERT OR REPLACE INTO dep_nodes (name, module_name, prop_value) VALUES (?, ?, ?)"
     saveDepEdgeStmt := ← sqlite.prepare "INSERT OR IGNORE INTO dep_edges (source, target, is_type) VALUES (?, ?, ?)"
   }
@@ -405,6 +409,12 @@ private def WriteStmts.saveTactic (s : WriteStmts) (modName : String) (tactic : 
     s.saveTacticTagStmt.bind 3 tag.toString
     run s.saveTacticTagStmt
 
+private def WriteStmts.saveExample (s : WriteStmts) (modName : String) (position : Int64) (source : String) : IO Unit := withDbContext "write:insert:module_examples" do
+  s.saveExampleStmt.bind 1 modName
+  s.saveExampleStmt.bind 2 position
+  s.saveExampleStmt.bind 3 source
+  run s.saveExampleStmt
+
 private def WriteStmts.saveDepEntry (s : WriteStmts) (modName : String) (entry : Process.DepEntry) : IO Unit := do
   withDbContext "write:insert:dep_nodes" do
     s.saveDepNodeStmt.bind 1 entry.name.toString
@@ -450,6 +460,7 @@ def ensureWriteDb (values : DocstringValues) (dbFile : System.FilePath) : IO Wri
     saveNameOnly modName position kind name type declRange := writeMutex.atomically do (← get).saveNameOnly modName position kind name type declRange
     saveInternalName name targetModule targetPosition := writeMutex.atomically do (← get).saveInternalName name targetModule targetPosition
     saveTactic modName tactic := writeMutex.atomically do (← get).saveTactic modName tactic
+    saveExample modName position source := writeMutex.atomically do (← get).saveExample modName position source
     saveDepEntry modName entry := writeMutex.atomically do (← get).saveDepEntry modName entry
   }
 
@@ -555,6 +566,9 @@ def updateModuleDb (values : DocstringValues)
             | .modDoc doc =>
               db.saveDeclarationRange modNameStr pos doc.declarationRange
               db.saveModuleDoc modNameStr pos doc.doc
+            | .exampleDecl ex =>
+              db.saveDeclarationRange modNameStr pos ex.declarationRange
+              db.saveExample modNameStr pos ex.source
             | .docInfo info =>
               let baseInfo := info.toInfo
               -- Skip saving ctorInfo here - they're saved along with their parent inductive
