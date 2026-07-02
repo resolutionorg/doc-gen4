@@ -6,6 +6,7 @@ timaeus fork: dep atlas output — `declarations/depgraph.json` plus the
 import DocGen4.Output.ToHtmlFormat
 import DocGen4.Output.Template
 import DocGen4.Output.ToJson
+import DocGen4.DB
 import SQLite
 
 namespace DocGen4
@@ -40,7 +41,7 @@ modules array holds only modules owning at least one node):
 ```
 -/
 def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
-    (jsonModules : Array JsonModule) : IO Unit := do
+    (linkCtx : DB.LinkingContext) (jsonModules : Array JsonModule) : IO Unit := do
   let db ← SQLite.openWith dbPath .readonly (busyTimeoutMs := 1800000)
 
   let mut propValue : Std.HashMap String Bool := {}
@@ -69,6 +70,16 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
   -- (no DOCGEN_LOCAL_ROOTS) runs include all of core in `jsonModules`, and
   -- listing thousands of node-less modules would bloat the JSON and the
   -- module-level atlas views.
+  --
+  -- A declaration is attributed to the module `name2ModIdx` resolves it to
+  -- (the same resolution HTML links use), not to the page it appears on: a
+  -- name declared in two modules (it happens — tms proves the same lemma in
+  -- two files to keep import weight light) appears on both pages, but the
+  -- environment holds one constant and its dependency record belongs with
+  -- it. Without this, the merged record manufactures a cross-module edge
+  -- and a phantom module cycle that scrambles the matrix's topological order.
+  let emittedModules : Std.HashSet String :=
+    Std.HashSet.emptyWithCapacity jsonModules.size |>.insertMany (jsonModules.map (·.name))
   let mut nodeIdx : Std.HashMap String Nat := {}
   let mut nodeInfos : Array (JsonDeclarationInfo × Nat) := #[]
   let mut moduleNames : Array String := #[]
@@ -76,11 +87,19 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
   for module in jsonModules do
     for decl in module.declarations do
       if propValue.contains decl.info.name && !nodeIdx.contains decl.info.name then
-        let m ← match moduleIdx[module.name]? with
+        let owner :=
+          match linkCtx.name2ModIdx[decl.info.name.toName]? with
+          | some idx =>
+            let m := linkCtx.moduleNames[idx.toNat]?.map (·.toString) |>.getD module.name
+            if emittedModules.contains m then m else module.name
+          | none => module.name
+        if owner != module.name then
+          IO.println s!"timaeus: dep atlas: duplicate declaration name {decl.info.name} (attributed to {owner}, also on {module.name})"
+        let m ← match moduleIdx[owner]? with
           | some m => pure m
           | none =>
-            moduleIdx := moduleIdx.insert module.name moduleNames.size
-            moduleNames := moduleNames.push module.name
+            moduleIdx := moduleIdx.insert owner moduleNames.size
+            moduleNames := moduleNames.push owner
             pure (moduleNames.size - 1)
         nodeIdx := nodeIdx.insert decl.info.name nodeInfos.size
         nodeInfos := nodeInfos.push (decl.info, m)

@@ -155,7 +155,7 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
   -- written before the dep tables existed). On failure any stale depgraph.json
   -- is removed — its node/module indices would not match the current pages.
   try
-    depGraphOutput baseConfig dbPath jsonModules
+    depGraphOutput baseConfig dbPath linkCtx jsonModules
   catch e =>
     IO.eprintln s!"WARNING: dep atlas emission failed: {e}"
     let stale := Output.basePath buildDir / "declarations" / "depgraph.json"
