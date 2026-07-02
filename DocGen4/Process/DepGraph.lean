@@ -170,7 +170,9 @@ def depEntryFor (ctx : ResolveCtx) (name : Name) : ResolveM (Option DepEntry) :=
     match ci with
     | .thmInfo _ => pure true
     | .inductInfo _ => pure false
-    | _ => try Meta.isProp ci.type catch _ => pure false
+    -- tryCatchRuntimeEx, not try/catch: `isProp` can hit the deterministic
+    -- heartbeat limit on huge types, and that is a runtime exception.
+    | _ => tryCatchRuntimeEx (Meta.isProp ci.type) fun _ => pure false
   return some { name, propValue, typeDeps, valueDeps }
 
 end DepGraph
