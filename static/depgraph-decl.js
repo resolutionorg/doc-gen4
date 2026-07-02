@@ -168,7 +168,9 @@ this one in their statements, directly or transitively.`
       if (c.affected.length === 0) continue;
       const row = el("details", "depgraph_cluster");
       const summary = el("summary");
-      summary.appendChild(el("span", "depgraph_cluster_label", c.label));
+      const label = el("span", "depgraph_cluster_label", c.label);
+      label.title = c.label;
+      summary.appendChild(label);
       summary.appendChild(el("span", "depgraph_cluster_count", `${c.affected.length} / ${c.total}`));
       const bar = el("span", "depgraph_cluster_bar");
       const fill = el("span", "depgraph_cluster_fill");

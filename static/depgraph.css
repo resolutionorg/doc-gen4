@@ -181,9 +181,10 @@
 }
 
 .depgraph_cluster summary {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1.1em minmax(0, 1fr) 4.5em 10em;
   align-items: center;
-  gap: 0.7em;
+  column-gap: 0.7em;
   cursor: pointer;
   list-style: none;
 }
@@ -200,19 +201,21 @@
 
 .depgraph_cluster_label {
   font-family: monospace;
-  min-width: 11em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .depgraph_cluster_count {
   font-size: 0.85em;
   opacity: 0.8;
-  min-width: 5em;
   text-align: right;
+  white-space: nowrap;
 }
 
 .depgraph_cluster_bar {
   display: inline-block;
-  width: 10em;
+  width: 100%;
   height: 0.65em;
   background: var(--body-bg);
   border: 1px solid var(--tags-border-color, #555);
