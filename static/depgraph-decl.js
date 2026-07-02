@@ -13,14 +13,7 @@
  *   not the Z stuff".
  */
 
-import { DepGraph, HeaderIndex, absolutizeLinks, kindBadge, infoIcon, closureDag } from "./depgraph.js";
-
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
+import { DepGraph, HeaderIndex, absolutizeLinks, el, kindBadge, infoIcon, closureDag } from "./depgraph.js";
 
 function extChip(name, url) {
   if (url) {
@@ -80,9 +73,9 @@ export function buildDepsPanel(graph, headers, id, { dag = true } = {}) {
   intro.appendChild(el("strong", null, "Statement dependencies"));
   intro.appendChild(
     document.createTextNode(
-      main.length === 0
+      closure.length === 0
         ? " — none within this project."
-        : ` — ${main.length + instances.length} declaration${main.length + instances.length === 1 ? "" : "s"} \
+        : ` — ${closure.length} declaration${closure.length === 1 ? "" : "s"} \
 referenced by this statement, directly or transitively, nearest first.`
     )
   );
@@ -96,10 +89,13 @@ referenced by this statement, directly or transitively, nearest first.`
   );
   panel.appendChild(intro);
 
-  if (dag && main.length > 1 && closure.length <= 80) {
-    const wrap = el("div", "atlas_dag_wrap");
-    wrap.appendChild(closureDag(graph, id));
-    panel.appendChild(wrap);
+  if (dag) {
+    const svg = closureDag(graph, id);
+    if (svg) {
+      const wrap = el("div", "atlas_dag_wrap");
+      wrap.appendChild(svg);
+      panel.appendChild(wrap);
+    }
   }
 
   for (const { id: i, depth } of main) {
@@ -219,8 +215,11 @@ function enableCrossHighlight(panel) {
     if (lit) lit.classList.remove("depgraph_lit");
     lit = null;
     if (!a || !panel.contains(a)) return;
-    const frag = a.href.split("#")[1];
+    let frag = a.href.split("#")[1];
     if (!frag) return;
+    try {
+      frag = decodeURIComponent(frag);
+    } catch {}
     const target = panel.querySelector(`.depgraph_item[data-name="${CSS.escape(frag)}"]`);
     if (target && !target.contains(a)) {
       target.classList.add("depgraph_lit");
@@ -229,19 +228,16 @@ function enableCrossHighlight(panel) {
   });
 }
 
-function addToggles(graph, declDiv) {
-  const name = declDiv.id;
-  const id = graph.idOf(name);
-  if (id === undefined) return;
-  const inner = declDiv.firstElementChild;
-  const gh = inner?.querySelector(":scope > .gh_link");
-  if (!inner || !gh) return;
+function addToggles(box) {
+  const name = box.dataset.decl;
+  const inner = box.closest("div.decl")?.firstElementChild ?? box.parentElement;
 
-  const box = el("div", "depgraph_toggles");
   const panels = {};
   const btns = {};
   let open = null;
+  let busy = false;
   const setOpen = async (label, build) => {
+    if (busy) return;
     if (open === label) {
       panels[label].style.display = "none";
       btns[label].classList.remove("depgraph_toggle_on");
@@ -255,8 +251,21 @@ function addToggles(graph, declDiv) {
     open = label;
     btns[label].classList.add("depgraph_toggle_on");
     if (!panels[label]) {
-      panels[label] = await build();
+      // The graph is fetched lazily, on the first toggle click on the page.
+      busy = true;
+      try {
+        const graph = await DepGraph.init();
+        const id = graph.idOf(name);
+        panels[label] =
+          id === undefined
+            ? el("div", "depgraph_panel", "No dependency data for this declaration.")
+            : await build(graph, id);
+      } catch (err) {
+        console.warn("dep atlas unavailable:", err);
+        panels[label] = el("div", "depgraph_panel", "Dependency data unavailable.");
+      }
       inner.appendChild(panels[label]);
+      busy = false;
     } else {
       panels[label].style.display = "";
     }
@@ -268,15 +277,10 @@ function addToggles(graph, declDiv) {
     btns[label] = btn;
     box.appendChild(btn);
   };
-  mkToggle("deps", async () => buildDepsPanel(graph, await HeaderIndex.init(), id));
-  mkToggle("used by", async () => buildImpactPanel(graph, id));
-  gh.after(box);
+  mkToggle("deps", async (graph, id) => buildDepsPanel(graph, await HeaderIndex.init(), id));
+  mkToggle("used by", async (graph, id) => buildImpactPanel(graph, id));
 }
 
-if (document.querySelector("div.decl")) {
-  DepGraph.init().then((graph) => {
-    for (const declDiv of document.querySelectorAll("div.decl[id]")) {
-      addToggles(graph, declDiv);
-    }
-  }).catch((err) => console.warn("dep atlas unavailable:", err));
+for (const box of document.querySelectorAll("div.depgraph_toggles[data-decl]")) {
+  addToggles(box);
 }

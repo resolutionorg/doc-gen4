@@ -18,6 +18,7 @@ out of non-propositional declarations) or the "proof graph" (all edges).
 -/
 import Lean
 import DocGen4.Process.Base
+import DocGen4.Process.DocInfo
 
 namespace DocGen4.Process
 
@@ -66,21 +67,29 @@ private def moduleOf? (env : Environment) (n : Name) : Option Name := do
 
 /--
 Resolve one raw used-constant name to the set of graph nodes it stands for.
-`path` guards against reference cycles among internal helpers.
+`path` maps each name on the current DFS path to its depth, guarding against
+reference cycles among internal helpers (mutual definitions and their
+auxiliaries). The returned `Option Nat` is the shallowest path depth a cycle
+was cut at, lowlink-style: a result whose only cycles route back to `n` itself
+is path-independent and safe to memoize; a result cut at a shallower ancestor
+is not, and is recomputed on the next approach.
 -/
-private partial def resolve (ctx : ResolveCtx) (path : Std.HashSet Name) (n : Name) :
-    ResolveM (Array Name) := do
+private partial def resolve (ctx : ResolveCtx) (path : Std.HashMap Name Nat) (n : Name) :
+    ResolveM (Array Name × Option Nat) := do
   if let some cached := (← get)[n]? then
-    return cached
-  if path.contains n then
-    return #[]
-  let result ← compute (path.insert n)
-  modify (·.insert n result)
-  return result
+    return (cached, none)
+  if let some depth := path[n]? then
+    return (#[], some depth)
+  let myDepth := path.size
+  let (result, cut?) ← compute (path.insert n myDepth)
+  let cut? := cut?.bind fun d => if d < myDepth then some d else none
+  if cut?.isNone then
+    modify (·.insert n result)
+  return (result, cut?)
 where
-  compute (path : Std.HashSet Name) : ResolveM (Array Name) := do
+  compute (path : Std.HashMap Name Nat) : ResolveM (Array Name × Option Nat) := do
     let env := ctx.env
-    let some ci := env.find? n | return #[]
+    let some ci := env.find? n | return (#[], none)
     -- Attribute generated companions to their parent type.
     match ci with
     | .ctorInfo v => return ← resolve ctx path v.induct
@@ -88,36 +97,38 @@ where
     | _ => pure ()
     if isAuxRecursor env n || isNoConfusion env n then
       return ← resolve ctx path n.getPrefix
-    if let some projInfo := env.getProjectionFnInfo? n then
-      if let some (.ctorInfo v) := env.find? projInfo.ctorName then
-        return ← resolve ctx path v.induct
-    -- Parent projections (`Monoid.toPow`) are synthesized defs, not projection
-    -- functions; attribute them to their structure as well.
-    if let .str parent _ := n then
-      if let some si := getStructureInfo? env parent then
-        if si.parentInfo.any (·.projFn == n) then
-          return ← resolve ctx path parent
+    -- Projection functions (fields, and synthesized parent projections like
+    -- `Monoid.toPow`) are attributed to their structure. `DocInfo.isProjFn` is
+    -- the same predicate the renderer uses, so attribution stays in sync with
+    -- what pages actually show.
+    if ← DocInfo.isProjFn n then
+      return ← resolve ctx path n.getPrefix
     -- Exact classification for names in the analyzed modules.
     if let some m := moduleOf? env n then
       if ctx.isRelevantModule m then
         if ctx.renderedSet.contains n then
-          return #[n]
+          return (#[n], none)
         else
           return ← expandThrough ci path
     -- Heuristic classification for everything else.
     if (privatePrefix? n).isSome || n.isInternalDetail || isEquationLemmaLike n
         || isMatcherCore env n then
       return ← expandThrough ci path
-    return #[n]
+    return (#[n], none)
 
   /-- Replace an internal helper by the union of its own dependencies. -/
-  expandThrough (ci : ConstantInfo) (path : Std.HashSet Name) : ResolveM (Array Name) := do
+  expandThrough (ci : ConstantInfo) (path : Std.HashMap Name Nat) :
+      ResolveM (Array Name × Option Nat) := do
     let raw := ci.type.getUsedConstants ++ (ci.value?.map (·.getUsedConstants)).getD #[]
     let mut acc : Std.HashSet Name := {}
+    let mut cut? : Option Nat := none
     for c in raw do
-      for r in ← resolve ctx path c do
+      let (rs, c?) ← resolve ctx path c
+      if let some d := c? then
+        cut? := some (min d (cut?.getD d))
+      for r in rs do
         acc := acc.insert r
-    return acc.toArray
+    return (acc.toArray, cut?)
 
 /-- Resolve a set of raw used constants, dropping `self` (and anything that
 attributes back to it, e.g. its own constructors). -/
@@ -125,7 +136,7 @@ private def resolveAll (ctx : ResolveCtx) (self : Name) (raw : Array Name) :
     ResolveM (Array Name) := do
   let mut acc : Std.HashSet Name := {}
   for c in raw do
-    for r in ← resolve ctx {} c do
+    for r in (← resolve ctx ({} : Std.HashMap Name Nat) c).1 do
       if r != self then
         acc := acc.insert r
   return acc.toArray.qsort Name.lt

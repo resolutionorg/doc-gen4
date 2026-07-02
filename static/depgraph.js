@@ -21,8 +21,14 @@ export class DepGraph {
     if (!DepGraph._promise) {
       const url = new URL(`${SITE_ROOT}declarations/depgraph.json`, window.location);
       DepGraph._promise = fetch(url)
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+          return res.json();
+        })
         .then((data) => new DepGraph(data));
+      DepGraph._promise.catch(() => {
+        DepGraph._promise = null;
+      });
     }
     return DepGraph._promise;
   }
@@ -216,8 +222,14 @@ export class HeaderIndex {
     if (!HeaderIndex._promise) {
       const url = new URL(`${SITE_ROOT}declarations/header-data.bmp`, window.location);
       HeaderIndex._promise = fetch(url)
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+          return res.json();
+        })
         .then((data) => new HeaderIndex(data));
+      HeaderIndex._promise.catch(() => {
+        HeaderIndex._promise = null;
+      });
     }
     return HeaderIndex._promise;
   }
@@ -245,23 +257,31 @@ export function absolutizeLinks(el) {
   }
 }
 
+export function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
 export function kindBadge(kind) {
-  const span = document.createElement("span");
-  span.className = `depgraph_kind depgraph_kind_${kind.replace(/ /g, "_")}`;
-  span.textContent = kind;
-  return span;
+  return el("span", `depgraph_kind depgraph_kind_${kind.replace(/ /g, "_")}`, kind);
 }
 
 /** A hoverable ⓘ carrying interpretive guidance, so running copy can stay factual. */
 export function infoIcon(text) {
-  const s = document.createElement("span");
-  s.className = "depgraph_info";
-  s.textContent = "ⓘ";
+  const s = el("span", "depgraph_info", "ⓘ");
   s.title = text;
   return s;
 }
 
-const SVG_NS = "http://www.w3.org/2000/svg";
+export const SVG_NS = "http://www.w3.org/2000/svg";
+
+export function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
 
 /**
  * Render a small layered DAG as an SVG element. Layer 0 is drawn at the top;
@@ -347,10 +367,11 @@ export function renderDag(nodes, edges) {
   });
   const totalH = y + nodeH + 12;
 
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
-  svg.setAttribute("width", totalW);
-  svg.setAttribute("class", "depgraph_dag");
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${totalW} ${totalH}`,
+    width: totalW,
+    class: "depgraph_dag",
+  });
 
   const edgeEls = new Map(nodes.map((n) => [n.id, []]));
   for (const [a, b, weight] of edges) {
@@ -361,10 +382,11 @@ export function renderDag(nodes, edges) {
     const y1 = pa.y + nodeH;
     const x2 = pb.x + pb.w / 2;
     const y2 = pb.y;
-    const path = document.createElementNS(SVG_NS, "path");
     const my = (y1 + y2) / 2;
-    path.setAttribute("d", `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`);
-    path.setAttribute("class", "dag_edge" + (byId.get(a).layer >= byId.get(b).layer ? " dag_edge_back" : ""));
+    const path = svgEl("path", {
+      d: `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`,
+      class: "dag_edge" + (byId.get(a).layer >= byId.get(b).layer ? " dag_edge_back" : ""),
+    });
     if (weight) path.setAttribute("stroke-width", Math.min(4, 1 + Math.log2(weight) / 2));
     svg.appendChild(path);
     edgeEls.get(a).push(path);
@@ -373,25 +395,21 @@ export function renderDag(nodes, edges) {
 
   for (const n of nodes) {
     const p = xy.get(n.id);
-    const g = document.createElementNS(SVG_NS, "g");
-    g.setAttribute("class", `dag_node dag_kind_${(n.kind ?? "def").replace(/ /g, "_")}` + (n.emphasis ? " dag_emph" : ""));
-    const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("x", p.x);
-    rect.setAttribute("y", p.y);
-    rect.setAttribute("width", p.w);
-    rect.setAttribute("height", nodeH);
-    rect.setAttribute("rx", 5);
-    const text = document.createElementNS(SVG_NS, "text");
-    text.setAttribute("x", p.x + p.w / 2);
-    text.setAttribute("y", p.y + nodeH / 2 + 4);
-    text.setAttribute("text-anchor", "middle");
+    const g = svgEl("g", {
+      class: `dag_node dag_kind_${(n.kind ?? "def").replace(/ /g, "_")}` + (n.emphasis ? " dag_emph" : ""),
+    });
+    const rect = svgEl("rect", { x: p.x, y: p.y, width: p.w, height: nodeH, rx: 5 });
+    const text = svgEl("text", {
+      x: p.x + p.w / 2,
+      y: p.y + nodeH / 2 + 4,
+      "text-anchor": "middle",
+    });
     text.textContent = n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label;
-    const title = document.createElementNS(SVG_NS, "title");
+    const title = svgEl("title", {});
     title.textContent = n.title ?? n.label;
     g.append(title, rect, text);
     if (n.href) {
-      const a = document.createElementNS(SVG_NS, "a");
-      a.setAttribute("href", n.href);
+      const a = svgEl("a", { href: n.href });
       a.appendChild(g);
       svg.appendChild(a);
     } else {
@@ -417,6 +435,8 @@ export function renderDag(nodes, edges) {
  */
 export function forceLayout(nodes, edges, iterations = 400) {
   const n = nodes.length;
+  // Bound main-thread time on large graphs by scaling down the iteration count.
+  const iters = n <= 300 ? iterations : Math.max(80, Math.round((iterations * 300) / n));
   const size = Math.max(420, Math.ceil(Math.sqrt(n) * 95));
   const k = Math.sqrt((size * size) / Math.max(1, n));
   const x = new Float64Array(n);
@@ -434,7 +454,7 @@ export function forceLayout(nodes, edges, iterations = 400) {
   // n nodes exceeds gravity at any distance and the periphery diverges.
   const cut2 = 2.5 * k * (2.5 * k);
   let temp = size / 8;
-  for (let it = 0; it < iterations; it++) {
+  for (let it = 0; it < iters; it++) {
     dx.fill(0);
     dy.fill(0);
     for (let i = 0; i < n; i++) {
@@ -481,9 +501,14 @@ export function forceLayout(nodes, edges, iterations = 400) {
  * The statement-closure DAG for one declaration: the target on top, its
  * transitive statement dependencies layered by distance. Instance nodes are
  * collapsed out (edges route through them to what they use).
+ *
+ * Returns null when a DAG would not help: fewer than 2 non-instance nodes in
+ * the closure, or more than 80 nodes total (a hairball).
  */
 export function closureDag(graph, start) {
   const closure = graph.closure(start);
+  const nonInstance = closure.filter(({ id }) => graph.node(id).k !== "instance").length;
+  if (nonInstance < 2 || closure.length > 80) return null;
   const inSet = new Map(closure.map(({ id, depth }) => [id, depth]));
   inSet.set(start, 0);
   const keep = (i) => graph.node(i).k !== "instance" || i === start;
