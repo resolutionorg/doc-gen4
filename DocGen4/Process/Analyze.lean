@@ -226,35 +226,42 @@ def process (task : AnalyzeTask) : MetaM AnalyzerResult := do
     res := res.insert moduleName {module with members := module.members.qsort ModuleMember.order}
 
   -- timaeus fork: collapsed dependency extraction for the dep atlas. One shared
-  -- memo across all modules; misclassifications degrade to plain-text names at
-  -- emit time, so extraction failures are logged, never fatal.
-  let mut renderedSet : Std.HashSet Name := {}
-  for (_, module) in res do
-    for mem in module.members do
-      if let .docInfo i := mem then
-        if i.shouldRender then
-          renderedSet := renderedSet.insert i.getName
-  let depCtx : DepGraph.ResolveCtx := {
-    env
-    renderedSet
-    isRelevantModule := relevantModules.contains
-  }
-  let mut deps : Std.HashMap Name (Array DepEntry) := {}
-  let go : DepGraph.ResolveM (Std.HashMap Name (Array DepEntry)) := do
-    let mut deps : Std.HashMap Name (Array DepEntry) := {}
-    for (moduleName, module) in res do
-      let mut entries := #[]
+  -- memo across all modules; failures are contained per declaration, so one bad
+  -- declaration costs its own entry, not the whole graph. Skipped for the
+  -- prefix task (`genCore`) — extracting dependencies for all of Init/Std/Lean
+  -- would be expensive and no view consumes them — and when DOCGEN_DEPGRAPH=0.
+  let enabled := (← IO.getEnv "DOCGEN_DEPGRAPH") != some "0"
+  let extract :=
+    match task with
+    | .analyzeConcreteModules _ => enabled
+    | .analyzePrefixModules _ => false
+  let deps ← if !extract then pure {} else do
+    let mut renderedSet : Std.HashSet Name := {}
+    for (_, module) in res do
       for mem in module.members do
         if let .docInfo i := mem then
           if i.shouldRender then
-            if let some entry ← DepGraph.depEntryFor depCtx i.getName then
-              entries := entries.push entry
-      deps := deps.insert moduleName entries
-    return deps
-  try
-    deps ← go.run' {}
-  catch e =>
-    IO.println s!"WARNING: dependency extraction failed: {← e.toMessageData.toString}"
+            renderedSet := renderedSet.insert i.getName
+    let depCtx : DepGraph.ResolveCtx := {
+      env
+      renderedSet
+      isRelevantModule := relevantModules.contains
+    }
+    let go : DepGraph.ResolveM (Std.HashMap Name (Array DepEntry)) := do
+      let mut acc : Std.HashMap Name (Array DepEntry) := {}
+      for (moduleName, module) in res do
+        let mut entries := #[]
+        for mem in module.members do
+          if let .docInfo i := mem then
+            if i.shouldRender then
+              try
+                if let some entry ← DepGraph.depEntryFor depCtx i.getName then
+                  entries := entries.push entry
+              catch e =>
+                IO.println s!"WARNING: dependency extraction failed for {i.getName}: {← e.toMessageData.toString}"
+        acc := acc.insert moduleName entries
+      return acc
+    go.run' {}
 
   return {
     name2ModIdx := env.const2ModIdx,

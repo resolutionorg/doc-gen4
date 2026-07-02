@@ -10,17 +10,10 @@
  * - decl: focus on one declaration — its statement closure and blast radius.
  */
 
-import { DepGraph, HeaderIndex, kindBadge, infoIcon, forceLayout, closureDag } from "./depgraph.js";
+import { DepGraph, HeaderIndex, el, svgEl, kindBadge, infoIcon, forceLayout, closureDag } from "./depgraph.js";
 import { buildDepsPanel, buildImpactPanel } from "./depgraph-decl.js";
 
 const app = document.getElementById("atlas_app");
-
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
 
 function parseHash() {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
@@ -132,7 +125,7 @@ function coreView(graph, state) {
       .map((nd, i) => i)
       .filter((i) => active.has(graph.node(i).k) || (graph.node(i).k === "class inductive" && active.has("class")))
       .sort((a, b) => state.meaningMass[b] - state.meaningMass[a] || state.proofMass[b] - state.proofMass[a]);
-    const maxMass = Math.max(1, ...ranked.slice(0, 1).map((i) => state.meaningMass[i]));
+    const maxMass = ranked.length ? Math.max(1, state.meaningMass[ranked[0]]) : 1;
     table.innerHTML =
       "<thead><tr><th></th><th>declaration</th><th>meaning mass</th><th>proof mass</th></tr></thead>";
     const tbody = el("tbody");
@@ -318,14 +311,6 @@ function matrixView(graph, state) {
 /* map view                                                            */
 /* ------------------------------------------------------------------ */
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-function svgEl(tag, attrs) {
-  const e = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-  return e;
-}
-
 const clusterHue = (ci) => Math.round(ci * 137.508) % 360;
 
 /** Build the map's node/edge sets at cluster or module granularity. */
@@ -473,23 +458,20 @@ function mapView(graph, state) {
   const baseFont = 9.5 * Math.max(1, fullW / 740);
   const hitPad = 4 * Math.max(1, fullW / 740);
 
+  const r = nodes.map(radius);
   const nodeEls = [];
-  const dotEls = [];
-  const hitEls = [];
   const labelEls = [];
   nodes.forEach((n, i) => {
     const g = svgEl("g", { class: "force_node" });
     // Small nodes render at ~2px; an invisible halo keeps them hover/clickable.
-    const hit = svgEl("circle", { cx: x[i], cy: y[i], class: "force_hit" });
-    const circle = svgEl("circle", { cx: x[i], cy: y[i], class: "force_dot" });
+    const hit = svgEl("circle", { cx: x[i], cy: y[i], r: (r[i] + hitPad).toFixed(2), class: "force_hit" });
+    const circle = svgEl("circle", { cx: x[i], cy: y[i], r: r[i].toFixed(2), class: "force_dot" });
     circle.style.fill = `hsl(${n.hue} 45% 55%)`;
     g.append(hit, circle);
     const t = svgEl("text", { x: x[i], "text-anchor": "middle", class: "force_label" });
     t.textContent = n.name;
     g.appendChild(t);
     nodeEls.push(g);
-    dotEls.push(circle);
-    hitEls.push(hit);
     labelEls.push(t);
     if (n.href) {
       const a = svgEl("a", { href: n.href });
@@ -501,15 +483,10 @@ function mapView(graph, state) {
   });
 
   // Nodes and edges live in world space (they grow on screen as you zoom
-  // in); labels keep constant on-screen size. Labelling is semantic: a label
+  // in); labels keep constant on-screen size. Labeling is semantic: a label
   // is shown iff there is room for it at the current scale — largest
   // declaration count wins — so zooming in reveals more labels as the world
   // (and the room around each node) grows relative to the text.
-  const r = nodes.map(radius);
-  nodes.forEach((n, i) => {
-    dotEls[i].setAttribute("r", r[i].toFixed(2));
-    hitEls[i].setAttribute("r", (r[i] + hitPad).toFixed(2));
-  });
   const labelOrder = [...nodes.keys()].sort((a, b) => nodes[b].decls - nodes[a].decls);
   const visibleLabels = new Set();
   const relayout = (viewW) => {
@@ -578,12 +555,19 @@ function mapView(graph, state) {
   // Label visibility only depends on scale, so relayout runs on zoom, not pan.
   const view = { x: minX, y: minY, w: fullW };
   let layoutW = null;
+  let relayoutPending = false;
   const apply = () => {
     svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${(view.w * fullH) / fullW}`);
-    if (view.w !== layoutW) {
-      layoutW = view.w;
-      relayout(view.w);
-      if (hovered !== null) labelEls[hovered].style.display = "";
+    // Label relayout is the expensive part; coalesce it into animation frames.
+    if (view.w !== layoutW && !relayoutPending) {
+      relayoutPending = true;
+      requestAnimationFrame(() => {
+        relayoutPending = false;
+        if (view.w === layoutW) return;
+        layoutW = view.w;
+        relayout(view.w);
+        if (hovered !== null) labelEls[hovered].style.display = "";
+      });
     }
   };
   apply();
@@ -626,6 +610,10 @@ function mapView(graph, state) {
     lastMoved = pan?.moved ?? false;
     pan = null;
   });
+  svg.addEventListener("pointercancel", () => (pan = null));
+  svg.addEventListener("pointerleave", () => {
+    if (pan && !pan.moved) pan = null;
+  });
   // A drag is not a click: keep module links from firing after a pan.
   svg.addEventListener("click", (ev) => {
     if (lastMoved) {
@@ -660,7 +648,9 @@ function declView(graph, state) {
   const panels = el("div", "atlas_decl_panels");
   container.append(box, results, target, panels);
 
+  let renderSeq = 0;
   const render = async (name) => {
+    const seq = ++renderSeq;
     results.innerHTML = "";
     target.innerHTML = "";
     panels.innerHTML = "";
@@ -669,6 +659,7 @@ function declView(graph, state) {
     state.decl = name;
     setHash("decl", name);
     const headers = await HeaderIndex.init();
+    if (seq !== renderSeq) return;
     const head = el("div", "depgraph_item");
     head.appendChild(kindBadge(graph.node(id).k));
     const a = el("a");
@@ -682,10 +673,10 @@ function declView(graph, state) {
       head.appendChild(sig);
     }
     target.appendChild(head);
-    const closureSize = graph.closure(id).length;
-    if (closureSize > 0 && closureSize <= 80) {
+    const svg = closureDag(graph, id);
+    if (svg) {
       const wrap = el("div", "atlas_dag_wrap");
-      wrap.appendChild(closureDag(graph, id));
+      wrap.appendChild(svg);
       target.appendChild(wrap);
     }
     const left = el("div", "atlas_decl_col");
@@ -726,6 +717,10 @@ function declView(graph, state) {
 
 DepGraph.init()
   .then((graph) => {
+    if (!graph.nodes.length) {
+      app.textContent = "No dependency data for this project.";
+      return;
+    }
     const state = parseHash();
     app.innerHTML = "";
 

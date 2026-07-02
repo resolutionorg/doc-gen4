@@ -333,6 +333,13 @@ def generateHtmlDocs (markerName : String) (rootMods : Array Module) (descriptio
   let markerFile := buildDir / "doc-data" / s!"{markerName}.docs_built"
   let staticFiles := #[
     basePath / "style.css",
+    basePath / "depgraph.css",
+    basePath / "depgraph.js",
+    basePath / "depgraph-decl.js",
+    basePath / "atlas.js",
+    basePath / "atlas.html",
+    basePath / "declarations" / "depgraph.json",
+    basePath / "declarations" / "header-data.bmp",
     basePath / "favicon.svg",
     basePath / "declaration-data.js",
     basePath / "color-scheme.js",
