@@ -492,11 +492,18 @@ function mapView(graph, state) {
 
   const nodeEls = [];
   const labelEls = [];
+  const hitPad = 4 * Math.max(1, fullW / 740);
   nodes.forEach((n, i) => {
     const g = svgEl("g", { class: "force_node" });
-    const circle = svgEl("circle", { cx: x[i], cy: y[i], r: radius(n).toFixed(1) });
+    // Small nodes render at ~2px; an invisible halo keeps them hover/clickable.
+    const hit = svgEl("circle", {
+      cx: x[i], cy: y[i], r: (radius(n) + hitPad).toFixed(1), class: "force_hit",
+    });
+    const circle = svgEl("circle", {
+      cx: x[i], cy: y[i], r: radius(n).toFixed(1), class: "force_dot",
+    });
     circle.style.fill = `hsl(${n.hue} 45% 55%)`;
-    g.appendChild(circle);
+    g.append(hit, circle);
     const t = svgEl("text", {
       x: x[i], y: y[i] + radius(n) + baseFont, "text-anchor": "middle", class: "force_label",
     });
@@ -577,14 +584,20 @@ function mapView(graph, state) {
   svg.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;
     pan = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y, moved: false };
-    svg.setPointerCapture(ev.pointerId);
   });
   svg.addEventListener("pointermove", (ev) => {
     if (!pan) return;
     const rect = svg.getBoundingClientRect();
     const dx = ev.clientX - pan.x;
     const dy = ev.clientY - pan.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) pan.moved = true;
+    if (!pan.moved) {
+      if (Math.abs(dx) + Math.abs(dy) <= 4) return;
+      // Capturing on pointerdown would retarget pointerup (and the derived
+      // click) to the svg, breaking node links — capture only once a real
+      // drag has started.
+      pan.moved = true;
+      svg.setPointerCapture(ev.pointerId);
+    }
     view.x = pan.vx - (dx / rect.width) * view.w;
     view.y = pan.vy - (dy / rect.height) * ((view.w * fullH) / fullW);
     apply();
