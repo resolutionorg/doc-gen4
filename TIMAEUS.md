@@ -141,6 +141,12 @@ chips (same version-skew as HTML links); mutual definitions form 2-cycles that
 mass ranking tolerates but does not condense; `genCore` would run extraction
 over all of core (unused by us).
 
+Dev gotcha: the JS/CSS in `static/` is embedded into the binary via
+`include_str`, and Lake does **not** track those files as module inputs. After
+editing `static/`, force a rebuild of the embedding module:
+`find .lake/build -name "Base.*" -path "*Output*" -delete && lake build doc-gen4`
+(from a docbuild dir), or `lake clean` the package.
+
 ## Usage
 
 The build/publish orchestration lives in the **`tide-docs` skill**
