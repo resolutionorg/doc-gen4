@@ -24,9 +24,11 @@ function el(tag, cls, text) {
 
 function parseHash() {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const view = params.get("view");
+  const decl = params.get("decl") || undefined;
   return {
-    view: params.get("view") || (params.get("decl") ? "decl" : "core"),
-    decl: params.get("decl") || undefined,
+    view: ["core", "map", "matrix", "decl"].includes(view) ? view : decl ? "decl" : "core",
+    decl,
   };
 }
 
@@ -421,7 +423,7 @@ function declView(graph, state) {
     }
     const left = el("div", "atlas_decl_col");
     const right = el("div", "atlas_decl_col");
-    left.appendChild(buildDepsPanel(graph, headers, id));
+    left.appendChild(buildDepsPanel(graph, headers, id, { dag: false }));
     right.appendChild(buildImpactPanel(graph, id));
     panels.append(left, right);
   };
@@ -496,7 +498,14 @@ DepGraph.init()
       tabs.appendChild(b);
       buttons[view] = b;
     }
-    show(state.view in views ? state.view : "core");
+    // setHash uses replaceState (no hashchange), so this only fires on real
+    // navigation, e.g. following an atlas link while already on the atlas.
+    window.addEventListener("hashchange", () => {
+      const s = parseHash();
+      if (s.decl) state.decl = s.decl;
+      show(views[s.view] ? s.view : "core");
+    });
+    show(views[state.view] ? state.view : "core");
   })
   .catch((err) => {
     app.textContent = `Dependency data unavailable: ${err}`;
