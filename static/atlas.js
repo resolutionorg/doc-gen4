@@ -27,7 +27,7 @@ function parseHash() {
   const view = params.get("view");
   const decl = params.get("decl") || undefined;
   return {
-    view: ["core", "map", "matrix", "decl"].includes(view) ? view : decl ? "decl" : "core",
+    view: ["core", "map", "matrix", "decl"].includes(view) ? view : decl ? "decl" : "map",
     decl,
   };
 }
@@ -410,9 +410,9 @@ function mapView(graph, state) {
   );
   container.appendChild(hint);
 
-  const granularity = state.mapGranularity ?? "cluster";
+  const granularity = state.mapGranularity ?? "module";
   const controls = el("div", "atlas_map_controls");
-  for (const [key, label] of [["cluster", "clusters"], ["module", "modules"]]) {
+  for (const [key, label] of [["module", "modules"], ["cluster", "clusters"]]) {
     const a = el("a", "atlas_map_gran" + (granularity === key ? " atlas_tab_on" : ""), label);
     a.href = "javascript:void(0)";
     a.addEventListener("click", () => {
@@ -754,8 +754,8 @@ DepGraph.init()
       show("decl");
     };
     for (const [view, label] of [
-      ["core", "core"],
       ["map", "map"],
+      ["core", "core"],
       ["matrix", "module matrix"],
       ["decl", "declaration"],
     ]) {
@@ -770,9 +770,9 @@ DepGraph.init()
     window.addEventListener("hashchange", () => {
       const s = parseHash();
       if (s.decl) state.decl = s.decl;
-      show(views[s.view] ? s.view : "core");
+      show(views[s.view] ? s.view : "map");
     });
-    show(views[state.view] ? state.view : "core");
+    show(views[state.view] ? state.view : "map");
   })
   .catch((err) => {
     app.textContent = `Dependency data unavailable: ${err}`;
