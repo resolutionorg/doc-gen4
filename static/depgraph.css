@@ -323,9 +323,37 @@
 
 .atlas_map_controls {
   display: flex;
+  align-items: baseline;
   gap: 1em;
   font-size: 0.9em;
   margin-bottom: 0.4em;
+}
+
+.atlas_legend {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+
+.atlas_legend_swatch {
+  width: 18px;
+  height: 8px;
+}
+
+.atlas_legend_up {
+  stroke: var(--link-color);
+}
+
+.atlas_legend_down {
+  stroke: var(--structure-and-inductive-color);
+}
+
+.atlas_legend_keys {
+  margin-left: 1.2em;
+  opacity: 0.6;
 }
 
 .atlas_map_gran {

@@ -395,20 +395,20 @@ function mapCones(graph, groupOfDecl, groupDecls, gi) {
 
 function mapView(graph, state) {
   const container = el("div", "atlas_map");
-  container.appendChild(
-    el(
-      "p",
-      "atlas_hint",
-      "A force-directed map of references between modules. Node area tracks " +
-        "declaration count; module nodes are colored by their name-prefix " +
-        "cluster, so a color mixing across the layout means related names do " +
-        "not form a dependency neighborhood. Position is emergent: only " +
-        "adjacency is meaningful. Hovering a node shows its dependency cones, " +
-        "computed on the declaration graph: blue = modules that reference it, " +
-        "directly or transitively; orange = modules it references. Scroll to " +
-        "zoom, drag to pan, double-click to reset; click a module to open it."
+  const hint = el(
+    "p",
+    "atlas_hint",
+    "References between modules. Node area = declarations, color = name-prefix cluster; the layout is force-directed."
+  );
+  hint.appendChild(
+    infoIcon(
+      "Position is emergent — only adjacency is meaningful. Hover cones are " +
+        "transitive and computed on the declaration graph. Color mixing across " +
+        "the layout means related names do not form a dependency neighborhood. " +
+        "Click a module to open it."
     )
   );
+  container.appendChild(hint);
 
   const granularity = state.mapGranularity ?? "cluster";
   const controls = el("div", "atlas_map_controls");
@@ -421,6 +421,21 @@ function mapView(graph, state) {
     });
     controls.appendChild(a);
   }
+  const legendSwatch = (cls) => {
+    const s = svgEl("svg", { viewBox: "0 0 18 8", class: "atlas_legend_swatch" });
+    s.appendChild(svgEl("line", { x1: 1, y1: 4, x2: 17, y2: 4, class: cls, "stroke-width": 2 }));
+    return s;
+  };
+  const legend = el("span", "atlas_legend");
+  legend.append(
+    el("span", null, "hover: "),
+    legendSwatch("atlas_legend_up"),
+    el("span", null, " depends on it "),
+    legendSwatch("atlas_legend_down"),
+    el("span", null, " its dependencies"),
+    el("span", "atlas_legend_keys", "scroll zoom · drag pan · double-click reset")
+  );
+  controls.appendChild(legend);
   container.appendChild(controls);
 
   const { nodes, edges, groupOfDecl } = mapData(graph, granularity);
