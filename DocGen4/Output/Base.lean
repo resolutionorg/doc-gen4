@@ -265,6 +265,11 @@ are used in documentation generation, notably JS and CSS ones.
   def importedByJs : String := include_str "../../static/importedBy.js"
   def findJs : String := include_str "../../static/find/find.js"
   def mathjaxConfigJs : String := include_str "../../static/mathjax-config.js"
+  -- timaeus fork: dep atlas assets
+  def depgraphJs : String := include_str "../../static/depgraph.js"
+  def depgraphDeclJs : String := include_str "../../static/depgraph-decl.js"
+  def atlasJs : String := include_str "../../static/atlas.js"
+  def depgraphCss : String := include_str "../../static/depgraph.css"
 
 end Static
 
@@ -448,6 +453,7 @@ def baseHtmlHeadDeclarations : BaseHtmlM (Array Html) := do
     <meta charset="UTF-8"/>,
     <meta name="viewport" content="width=device-width, initial-scale=1"/>,
     <link rel="stylesheet" href={s!"{← getRoot}style.css"}/>,
+    <link rel="stylesheet" href={s!"{← getRoot}depgraph.css"}/>,
     <link rel="icon" href={s!"{← getRoot}favicon.svg"}/>,
     <link rel="mask-icon" href={s!"{← getRoot}favicon.svg"} color="#000000"/>,
     <link rel="prefetch" href={s!"{← getRoot}/declarations/declaration-data.bmp"} as="image"/>

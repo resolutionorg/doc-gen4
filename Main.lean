@@ -148,6 +148,24 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
   -- Generate the search index (declaration-data.bmp)
   htmlOutputIndex baseConfig jsonModules allTactics
 
+  -- timaeus fork: emit the dep atlas graph, and the header index that the
+  -- statement-closure panels render declaration signatures from. Each is
+  -- best-effort and independent: the views degrade to "data unavailable" in
+  -- the browser, so emission must never fail a docs build (e.g. a database
+  -- written before the dep tables existed). On failure any stale depgraph.json
+  -- is removed — its node/module indices would not match the current pages.
+  try
+    depGraphOutput baseConfig dbPath jsonModules
+  catch e =>
+    IO.eprintln s!"WARNING: dep atlas emission failed: {e}"
+    let stale := Output.basePath buildDir / "declarations" / "depgraph.json"
+    if ← stale.pathExists then
+      IO.FS.removeFile stale
+  try
+    headerDataOutput buildDir
+  catch e =>
+    IO.eprintln s!"WARNING: header-data emission failed: {e}"
+
   -- Update navbar to include all modules on disk
   updateNavbarFromDisk buildDir
   if let .some manifestOutput := manifestOutput? then

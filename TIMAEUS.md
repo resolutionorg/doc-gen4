@@ -90,6 +90,65 @@ at it — a one/two-line change in the `tide-docs` skill. It is a large static
 tree, and current coverage is effectively complete, so it is not worth it yet;
 this note is here so a future maintainer knows the option exists and why.
 
+## The dep atlas (`billy-lean/dep-atlas`)
+
+Declaration-level dependency views woven into the emitted docs. Three pieces:
+
+**Extraction** (`DocGen4/Process/DepGraph.lean`, hooked into `Process.process`):
+for every rendered declaration, the used constants of its *type* and of its
+*value* are collected separately and collapsed to human-facing declarations —
+references to match auxiliaries, equation lemmas, `_proof_N`, private helpers
+are transitively replaced by their own dependencies; constructors, projections
+(field and parent), recursors and `noConfusion` are attributed to their parent
+type. For inductives/structures the constructor signatures count as part of the
+type. Each record also notes whether the value is a proof (`theorem` or
+`Prop`-valued). Stored in two DB tables (`dep_nodes`, `dep_edges`).
+
+The type/value split is the point (cf. Lean Atlas, arXiv:2604.16347). Two edge
+relations are derived client-side:
+
+* **meaning** = type edges + value edges of non-proofs. If a definition is
+  *wrong* (typechecks but says the wrong thing), the tainted set is backwards
+  reachability along meaning edges — proofs that merely *use* lemmas about it
+  are not tainted, their statements don't mention it.
+* **proof** = all edges. If a lemma is *false*, backwards reachability here is
+  what's unproven.
+
+**Emission** (`DocGen4/Output/DepGraph.lean`, run by `fromDb`): writes
+`declarations/depgraph.json` (nodes = emitted declarations, edge targets
+resolved to node indices; external targets resolved through the same address
+book as HTML links, so the frontier points at hosted Mathlib docs; external
+value-deps of proofs are dropped as pure noise). `fromDb` now also emits
+`declarations/header-data.bmp` (signature HTML per declaration) which the
+panels render from.
+
+**Views** (all client-side, `static/depgraph*.js`, `static/atlas.js`):
+
+* every declaration page: a `deps` toggle (statement closure: everything the
+  statement's meaning rests on, one readable list in dependency order, with
+  signatures, instances collapsed, external frontier as chips) and a `used by`
+  toggle (blast radius: meaning-dependents counted and grouped into module
+  prefix clusters — reads as "the X and Y stuff, not the Z stuff" — plus the
+  count of proof-only dependents).
+* `atlas.html` (navbar: "dependency atlas"): *core* (declarations ranked by
+  meaning mass = how many statements transitively rest on them), *map*
+  (force-directed module map, deterministic precomputed layout, cluster or
+  per-module granularity, nodes colored by name-prefix cluster), *module
+  matrix* (module × module DSM in topological order, canvas, click for the
+  crossing references), *declaration* (search + closure DAG + both panels;
+  deep-linkable via `atlas.html#decl=Name`).
+
+Known rough edges: names renamed/removed on Mathlib master render as unlinked
+chips (same version-skew as HTML links); mutual definitions form 2-cycles that
+mass ranking tolerates but does not condense; `genCore` would run extraction
+over all of core (unused by us).
+
+Dev gotcha: the JS/CSS in `static/` is embedded into the binary via
+`include_str`, and Lake does **not** track those files as module inputs. After
+editing `static/`, force a rebuild of the embedding module:
+`find .lake/build -name "Base.*" -path "*Output*" -delete && lake build doc-gen4`
+(from a docbuild dir), or `lake clean` the package.
+
 ## Usage
 
 The build/publish orchestration lives in the **`tide-docs` skill**

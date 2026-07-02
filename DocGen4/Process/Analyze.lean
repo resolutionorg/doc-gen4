@@ -13,6 +13,7 @@ import Std.Data.HashSet
 import DocGen4.Process.Base
 import DocGen4.Process.Hierarchy
 import DocGen4.Process.DocInfo
+import DocGen4.Process.DepGraph
 
 namespace DocGen4.Process
 
@@ -92,6 +93,12 @@ structure AnalyzerResult where
   empty.
   -/
   containedNames : Std.HashMap Name (Std.HashSet Name) := {}
+  /--
+  timaeus fork: collapsed dependency records per module, for the dep atlas.
+  Only populated during analysis (`process`); empty when read back from the
+  database (the `fromDb` command reads the dep tables directly).
+  -/
+  deps : Std.HashMap Name (Array DepEntry) := {}
   deriving Inhabited
 
 namespace ModuleMember
@@ -218,10 +225,49 @@ def process (task : AnalyzeTask) : MetaM AnalyzerResult := do
   for (moduleName, module) in res.toArray do
     res := res.insert moduleName {module with members := module.members.qsort ModuleMember.order}
 
+  -- timaeus fork: collapsed dependency extraction for the dep atlas. One shared
+  -- memo across all modules; failures are contained per declaration, so one bad
+  -- declaration costs its own entry, not the whole graph. Skipped for the
+  -- prefix task (`genCore`) — extracting dependencies for all of Init/Std/Lean
+  -- would be expensive and no view consumes them — and when DOCGEN_DEPGRAPH=0.
+  let enabled := (← IO.getEnv "DOCGEN_DEPGRAPH") != some "0"
+  let extract :=
+    match task with
+    | .analyzeConcreteModules _ => enabled
+    | .analyzePrefixModules _ => false
+  let deps ← if !extract then pure {} else do
+    let mut renderedSet : Std.HashSet Name := {}
+    for (_, module) in res do
+      for mem in module.members do
+        if let .docInfo i := mem then
+          if i.shouldRender then
+            renderedSet := renderedSet.insert i.getName
+    let depCtx : DepGraph.ResolveCtx := {
+      env
+      renderedSet
+      isRelevantModule := relevantModules.contains
+    }
+    let go : DepGraph.ResolveM (Std.HashMap Name (Array DepEntry)) := do
+      let mut acc : Std.HashMap Name (Array DepEntry) := {}
+      for (moduleName, module) in res do
+        let mut entries := #[]
+        for mem in module.members do
+          if let .docInfo i := mem then
+            if i.shouldRender then
+              try
+                if let some entry ← DepGraph.depEntryFor depCtx i.getName then
+                  entries := entries.push entry
+              catch e =>
+                IO.println s!"WARNING: dependency extraction failed for {i.getName}: {← e.toMessageData.toString}"
+        acc := acc.insert moduleName entries
+      return acc
+    go.run' {}
+
   return {
     name2ModIdx := env.const2ModIdx,
     moduleNames := allModules,
     moduleInfo := res,
+    deps,
   }
 
 open Std (Iterator Iter)
