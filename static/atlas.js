@@ -10,7 +10,7 @@
  * - decl: focus on one declaration — its statement closure and blast radius.
  */
 
-import { DepGraph, HeaderIndex, kindBadge, infoIcon, renderDag, closureDag } from "./depgraph.js";
+import { DepGraph, HeaderIndex, kindBadge, infoIcon, forceLayout, closureDag } from "./depgraph.js";
 import { buildDepsPanel, buildImpactPanel } from "./depgraph-decl.js";
 
 const app = document.getElementById("atlas_app");
@@ -318,63 +318,160 @@ function matrixView(graph, state) {
 /* map view                                                            */
 /* ------------------------------------------------------------------ */
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+const clusterHue = (ci) => Math.round(ci * 137.508) % 360;
+
+/** Build the map's node/edge sets at cluster or module granularity. */
+function mapData(graph, granularity) {
+  const clusters = graph.moduleClusters();
+  const modToCluster = new Map();
+  clusters.forEach((c, ci) => c.modules.forEach((m) => modToCluster.set(m, ci)));
+  const declPerModule = new Array(graph.modules.length).fill(0);
+  for (const nd of graph.nodes) declPerModule[nd.m]++;
+
+  const groupOf = granularity === "module" ? (m) => m : (m) => modToCluster.get(m);
+  const nGroups = granularity === "module" ? graph.modules.length : clusters.length;
+  const counts = new Map();
+  for (let i = 0; i < graph.nodes.length; i++) {
+    const a = groupOf(graph.node(i).m);
+    for (const d of graph.proofDeps(i)) {
+      const b = groupOf(graph.node(d).m);
+      if (a !== b) counts.set(a * nGroups + b, (counts.get(a * nGroups + b) ?? 0) + 1);
+    }
+  }
+  const edges = [...counts.entries()].map(([key, w]) => [Math.floor(key / nGroups), key % nGroups, w]);
+  const nodes =
+    granularity === "module"
+      ? graph.modules.map((name, m) => ({
+          name,
+          decls: declPerModule[m],
+          hue: clusterHue(modToCluster.get(m)),
+          href: graph.moduleLink(m),
+        }))
+      : clusters.map((c, ci) => ({
+          name: c.label,
+          decls: c.modules.reduce((acc, m) => acc + declPerModule[m], 0),
+          modules: c.modules.length,
+          hue: clusterHue(ci),
+        }));
+  return { nodes, edges };
+}
+
 function mapView(graph, state) {
   const container = el("div", "atlas_map");
   container.appendChild(
     el(
       "p",
       "atlas_hint",
-      "Module clusters (grouped by name prefix, sized by declaration count) and " +
-        "the references between them. Arrows point downward from a cluster to " +
-        "the clusters it references; dashed edges run against the layering."
+      "A force-directed map of references between modules. Node area tracks " +
+        "declaration count; module nodes are colored by their name-prefix " +
+        "cluster, so a color mixing across the layout means related names do " +
+        "not form a dependency neighborhood. Position is emergent: only " +
+        "adjacency is meaningful. Hover for names and edges, click a module " +
+        "to open it."
     )
   );
-  const clusters = graph.moduleClusters();
-  const K = clusters.length;
-  const modToCluster = new Map();
-  clusters.forEach((c, ci) => c.modules.forEach((m) => modToCluster.set(m, ci)));
-  const declCount = new Array(K).fill(0);
-  const counts = new Map();
-  for (let i = 0; i < graph.nodes.length; i++) {
-    const a = modToCluster.get(graph.node(i).m);
-    declCount[a]++;
-    for (const d of graph.proofDeps(i)) {
-      const b = modToCluster.get(graph.node(d).m);
-      if (a !== b) counts.set(a * K + b, (counts.get(a * K + b) ?? 0) + 1);
+
+  const granularity = state.mapGranularity ?? "cluster";
+  const controls = el("div", "atlas_map_controls");
+  for (const [key, label] of [["cluster", "prefix clusters"], ["module", "one node per module"]]) {
+    const a = el("a", "atlas_map_gran" + (granularity === key ? " atlas_tab_on" : ""), label);
+    a.href = "javascript:void(0)";
+    a.addEventListener("click", () => {
+      state.mapGranularity = key;
+      container.replaceWith(mapView(graph, state));
+    });
+    controls.appendChild(a);
+  }
+  container.appendChild(controls);
+
+  const { nodes, edges } = mapData(graph, granularity);
+  const { x, y } = forceLayout(nodes, edges);
+  const radius = (n) => 3.5 + 2.4 * Math.sqrt(n.decls);
+  const pad = 14 + Math.max(...nodes.map(radius));
+  const minX = Math.min(...x) - pad;
+  const maxX = Math.max(...x) + pad;
+  const minY = Math.min(...y) - pad;
+  const maxY = Math.max(...y) + pad + 10; // room for labels below nodes
+  const svg = svgEl("svg", {
+    viewBox: `${minX} ${minY} ${maxX - minX} ${maxY - minY}`,
+    class: "atlas_force",
+  });
+  svg.style.width = "100%";
+  svg.style.maxWidth = "740px";
+
+  let maxW = 1;
+  for (const [, , w] of edges) maxW = Math.max(maxW, w);
+  const incident = nodes.map(() => []);
+  for (const [a, b, w] of edges) {
+    const line = svgEl("line", {
+      x1: x[a], y1: y[a], x2: x[b], y2: y[b],
+      class: "force_edge",
+      "stroke-width": (0.6 + (1.8 * Math.log(1 + w)) / Math.log(1 + maxW)).toFixed(2),
+    });
+    svg.appendChild(line);
+    incident[a].push(line);
+    incident[b].push(line);
+  }
+
+  // Label sizes are in viewBox units, so compensate for the scale-down to
+  // the on-screen width. In module mode label the largest modules only,
+  // skipping labels that would collide.
+  const scale = Math.max(1, (maxX - minX) / 740);
+  const fontSize = 9.5 * scale;
+  const labelled = new Set();
+  const placed = [];
+  const tryLabel = (i) => {
+    const w = nodes[i].name.length * fontSize * 0.62;
+    const box = { x0: x[i] - w / 2, x1: x[i] + w / 2, y0: y[i], y1: y[i] + radius(nodes[i]) + fontSize + 4 };
+    if (placed.some((b) => box.x0 < b.x1 && b.x0 < box.x1 && box.y0 < b.y1 && b.y0 < box.y1)) return;
+    placed.push(box);
+    labelled.add(i);
+  };
+  if (granularity === "module") {
+    [...nodes.keys()].sort((a, b) => nodes[b].decls - nodes[a].decls).slice(0, 20).forEach(tryLabel);
+  } else {
+    nodes.forEach((_, i) => tryLabel(i));
+  }
+
+  nodes.forEach((n, i) => {
+    const g = svgEl("g", { class: "force_node" });
+    const circle = svgEl("circle", { cx: x[i], cy: y[i], r: radius(n).toFixed(1) });
+    circle.style.fill = `hsl(${n.hue} 45% 55%)`;
+    const title = document.createElementNS(SVG_NS, "title");
+    title.textContent =
+      granularity === "module"
+        ? `${n.name} — ${n.decls} declarations`
+        : `${n.name} — ${n.modules} modules, ${n.decls} declarations`;
+    g.append(title, circle);
+    if (labelled.has(i)) {
+      const t = svgEl("text", {
+        x: x[i], y: y[i] + radius(n) + fontSize, "text-anchor": "middle", class: "force_label",
+      });
+      t.style.fontSize = `${fontSize.toFixed(1)}px`;
+      t.textContent = n.name;
+      g.appendChild(t);
     }
-  }
-  // Layer by longest chain of dependents above; cycles keep their partial layer.
-  const usesOf = Array.from({ length: K }, () => []);
-  const pendingUsers = new Array(K).fill(0);
-  for (const key of counts.keys()) {
-    const a = Math.floor(key / K);
-    const b = key % K;
-    usesOf[a].push(b);
-    pendingUsers[b]++;
-  }
-  const layer = new Array(K).fill(0);
-  let frontier = [];
-  for (let c = 0; c < K; c++) if (!pendingUsers[c]) frontier.push(c);
-  while (frontier.length) {
-    const next = [];
-    for (const a of frontier) {
-      for (const b of usesOf[a]) {
-        layer[b] = Math.max(layer[b], layer[a] + 1);
-        if (--pendingUsers[b] === 0) next.push(b);
-      }
+    if (n.href) {
+      const a = svgEl("a", { href: n.href });
+      a.appendChild(g);
+      svg.appendChild(a);
+    } else {
+      svg.appendChild(g);
     }
-    frontier = next;
-  }
-  const nodes = clusters.map((c, ci) => ({
-    id: ci,
-    label: `${c.label} · ${declCount[ci]}`,
-    title: `${c.label}: ${c.modules.length} modules, ${declCount[ci]} declarations`,
-    layer: layer[ci],
-    kind: "module",
-  }));
-  const edges = [...counts.entries()].map(([key, w]) => [Math.floor(key / K), key % K, w]);
+    g.addEventListener("mouseenter", () => incident[i].forEach((e) => e.classList.add("force_edge_hot")));
+    g.addEventListener("mouseleave", () => incident[i].forEach((e) => e.classList.remove("force_edge_hot")));
+  });
+
   const wrap = el("div", "atlas_dag_wrap");
-  wrap.appendChild(renderDag(nodes, edges));
+  wrap.appendChild(svg);
   container.appendChild(wrap);
   return container;
 }
