@@ -405,8 +405,8 @@ function mapView(graph, state) {
         "not form a dependency neighborhood. Position is emergent: only " +
         "adjacency is meaningful. Hovering a node shows its dependency cones, " +
         "computed on the declaration graph: blue = modules that reference it, " +
-        "directly or transitively; orange = modules it references. Click a " +
-        "module to open it."
+        "directly or transitively; orange = modules it references. Scroll to " +
+        "zoom, drag to pan, double-click to reset; click a module to open it."
     )
   );
 
@@ -454,15 +454,17 @@ function mapView(graph, state) {
   }
 
   // Label sizes are in viewBox units, so compensate for the scale-down to
-  // the on-screen width. In module mode label the largest modules only,
-  // skipping labels that would collide.
-  const scale = Math.max(1, (maxX - minX) / 740);
-  const fontSize = 9.5 * scale;
+  // the on-screen width. Every node gets a label element in the same place
+  // and style; only some start visible (largest first, skipping collisions),
+  // the rest are revealed by hover — nothing moves or resizes on hover.
+  const fullW = maxX - minX;
+  const fullH = maxY - minY;
+  const baseFont = 9.5 * Math.max(1, fullW / 740);
   const labelled = new Set();
   const placed = [];
   const tryLabel = (i) => {
-    const w = nodes[i].name.length * fontSize * 0.62;
-    const box = { x0: x[i] - w / 2, x1: x[i] + w / 2, y0: y[i], y1: y[i] + radius(nodes[i]) + fontSize + 4 };
+    const w = nodes[i].name.length * baseFont * 0.62;
+    const box = { x0: x[i] - w / 2, x1: x[i] + w / 2, y0: y[i], y1: y[i] + radius(nodes[i]) + baseFont + 4 };
     if (placed.some((b) => box.x0 < b.x1 && b.x0 < box.x1 && box.y0 < b.y1 && b.y0 < box.y1)) return;
     placed.push(box);
     labelled.add(i);
@@ -474,20 +476,21 @@ function mapView(graph, state) {
   }
 
   const nodeEls = [];
+  const labelEls = [];
   nodes.forEach((n, i) => {
     const g = svgEl("g", { class: "force_node" });
     const circle = svgEl("circle", { cx: x[i], cy: y[i], r: radius(n).toFixed(1) });
     circle.style.fill = `hsl(${n.hue} 45% 55%)`;
     g.appendChild(circle);
-    if (labelled.has(i)) {
-      const t = svgEl("text", {
-        x: x[i], y: y[i] + radius(n) + fontSize, "text-anchor": "middle", class: "force_label",
-      });
-      t.style.fontSize = `${fontSize.toFixed(1)}px`;
-      t.textContent = n.name;
-      g.appendChild(t);
-    }
+    const t = svgEl("text", {
+      x: x[i], y: y[i] + radius(n) + baseFont, "text-anchor": "middle", class: "force_label",
+    });
+    t.style.fontSize = `${baseFont.toFixed(1)}px`;
+    t.textContent = n.name;
+    if (!labelled.has(i)) t.style.display = "none";
+    g.appendChild(t);
     nodeEls.push(g);
+    labelEls.push(t);
     if (n.href) {
       const a = svgEl("a", { href: n.href });
       a.appendChild(g);
@@ -497,56 +500,97 @@ function mapView(graph, state) {
     }
   });
 
-  // Hover: show the node's dependency cones and an immediate label.
-  const hoverName = svgEl("text", { class: "force_hover_name", "text-anchor": "middle" });
-  const hoverStats = svgEl("text", { class: "force_hover_stats", "text-anchor": "middle" });
-  hoverName.style.fontSize = `${(fontSize * 1.15).toFixed(1)}px`;
-  hoverStats.style.fontSize = `${(fontSize * 0.9).toFixed(1)}px`;
-  hoverName.style.display = "none";
-  hoverStats.style.display = "none";
-  svg.append(hoverName, hoverStats);
-
+  // Hover: color the node's dependency cones and reveal its label in place.
   const coneCache = new Map();
   let marked = [];
+  let hovered = null;
   const unhover = () => {
-    svg.classList.remove("force_focus");
     for (const [el2, cls] of marked) el2.classList.remove(cls);
     marked = [];
-    hoverName.style.display = "none";
-    hoverStats.style.display = "none";
+    if (hovered !== null && !labelled.has(hovered)) labelEls[hovered].style.display = "none";
+    hovered = null;
   };
   const hover = (i) => {
     unhover();
+    hovered = i;
     if (!coneCache.has(i)) coneCache.set(i, mapCones(graph, groupOfDecl, groupDecls, i));
     const { up, down } = coneCache.get(i);
-    svg.classList.add("force_focus");
     const mark = (el2, cls) => {
       el2.classList.add(cls);
       marked.push([el2, cls]);
     };
     mark(nodeEls[i], "force_hot");
+    mark(labelEls[i], "force_label_hot");
+    labelEls[i].style.display = "";
     for (const j of up) mark(nodeEls[j], "force_up");
     for (const j of down) mark(nodeEls[j], "force_down");
     for (const e of edgeRecs) {
       if (up.has(e.a) && (up.has(e.b) || e.b === i)) mark(e.el, "force_edge_up");
       else if (down.has(e.b) && (down.has(e.a) || e.a === i)) mark(e.el, "force_edge_down");
     }
-    const n = nodes[i];
-    // Two stacked lines above the node, or below it when too close to the top.
-    const flip = y[i] - radius(n) - fontSize * 2.8 < minY;
-    const nameY = flip ? y[i] + radius(n) + fontSize * 1.4 : y[i] - radius(n) - fontSize * 1.8;
-    hoverName.setAttribute("x", x[i]);
-    hoverName.setAttribute("y", nameY);
-    hoverName.textContent = n.name;
-    hoverStats.setAttribute("x", x[i]);
-    hoverStats.setAttribute("y", nameY + fontSize * 1.15);
-    hoverStats.textContent = `${n.decls} declarations · used by ${up.size} · uses ${down.size}`;
-    hoverName.style.display = "";
-    hoverStats.style.display = "";
   };
   nodeEls.forEach((g, i) => {
     g.addEventListener("mouseenter", () => hover(i));
     g.addEventListener("mouseleave", unhover);
+  });
+
+  // Zoom (wheel, cursor-centered) and pan (drag); double-click resets.
+  // Strokes are non-scaling (CSS); labels are rescaled to keep their
+  // on-screen size, so zooming separates nodes without inflating text.
+  const view = { x: minX, y: minY, w: fullW };
+  const apply = () => {
+    svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${(view.w * fullH) / fullW}`);
+    const f = baseFont * (view.w / fullW);
+    labelEls.forEach((t, i) => {
+      t.style.fontSize = `${f.toFixed(2)}px`;
+      t.setAttribute("y", y[i] + radius(nodes[i]) + f);
+    });
+  };
+  svg.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const newW = Math.min(fullW * 1.5, Math.max(fullW / 20, view.w * Math.exp(ev.deltaY * 0.0015)));
+    const px = view.x + ((ev.clientX - rect.left) / rect.width) * view.w;
+    const py = view.y + ((ev.clientY - rect.top) / rect.height) * ((view.w * fullH) / fullW);
+    const s = newW / view.w;
+    view.x = px - (px - view.x) * s;
+    view.y = py - (py - view.y) * s;
+    view.w = newW;
+    apply();
+  }, { passive: false });
+  let pan = null;
+  svg.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    pan = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y, moved: false };
+    svg.setPointerCapture(ev.pointerId);
+  });
+  svg.addEventListener("pointermove", (ev) => {
+    if (!pan) return;
+    const rect = svg.getBoundingClientRect();
+    const dx = ev.clientX - pan.x;
+    const dy = ev.clientY - pan.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) pan.moved = true;
+    view.x = pan.vx - (dx / rect.width) * view.w;
+    view.y = pan.vy - (dy / rect.height) * ((view.w * fullH) / fullW);
+    apply();
+  });
+  let lastMoved = false;
+  svg.addEventListener("pointerup", () => {
+    lastMoved = pan?.moved ?? false;
+    pan = null;
+  });
+  // A drag is not a click: keep module links from firing after a pan.
+  svg.addEventListener("click", (ev) => {
+    if (lastMoved) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }, true);
+  svg.addEventListener("dblclick", () => {
+    view.x = minX;
+    view.y = minY;
+    view.w = fullW;
+    apply();
   });
 
   const wrap = el("div", "atlas_dag_wrap");
