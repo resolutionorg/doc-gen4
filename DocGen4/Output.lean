@@ -187,7 +187,7 @@ def readLocalRoots : IO (Array Name) := do
   match ← IO.getEnv "DOCGEN_LOCAL_ROOTS" with
   | none => return #[]
   | some s => return (s.splitOn ",").toArray.filterMap fun x =>
-      let x := x.trim
+      let x := x.trimAscii.copy
       if x.isEmpty then none else some x.toName
 
 /-- timaeus fork: load the external declaration address book (name -> docLink)
