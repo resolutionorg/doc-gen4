@@ -468,50 +468,28 @@ function mapView(graph, state) {
     edgeRecs.push({ el: line, a, b });
   }
 
-  // Label sizes are in viewBox units, so compensate for the scale-down to
-  // the on-screen width. Every node gets a label element in the same place
-  // and style; only some start visible (largest first, skipping collisions),
-  // the rest are revealed by hover — nothing moves or resizes on hover.
   const fullW = maxX - minX;
   const fullH = maxY - minY;
   const baseFont = 9.5 * Math.max(1, fullW / 740);
-  const labelled = new Set();
-  const placed = [];
-  const tryLabel = (i) => {
-    const w = nodes[i].name.length * baseFont * 0.62;
-    const box = { x0: x[i] - w / 2, x1: x[i] + w / 2, y0: y[i], y1: y[i] + radius(nodes[i]) + baseFont + 4 };
-    if (placed.some((b) => box.x0 < b.x1 && b.x0 < box.x1 && box.y0 < b.y1 && b.y0 < box.y1)) return;
-    placed.push(box);
-    labelled.add(i);
-  };
-  if (granularity === "module") {
-    [...nodes.keys()].sort((a, b) => nodes[b].decls - nodes[a].decls).slice(0, 20).forEach(tryLabel);
-  } else {
-    nodes.forEach((_, i) => tryLabel(i));
-  }
+  const hitPad = 4 * Math.max(1, fullW / 740);
 
   const nodeEls = [];
+  const dotEls = [];
+  const hitEls = [];
   const labelEls = [];
-  const hitPad = 4 * Math.max(1, fullW / 740);
   nodes.forEach((n, i) => {
     const g = svgEl("g", { class: "force_node" });
     // Small nodes render at ~2px; an invisible halo keeps them hover/clickable.
-    const hit = svgEl("circle", {
-      cx: x[i], cy: y[i], r: (radius(n) + hitPad).toFixed(1), class: "force_hit",
-    });
-    const circle = svgEl("circle", {
-      cx: x[i], cy: y[i], r: radius(n).toFixed(1), class: "force_dot",
-    });
+    const hit = svgEl("circle", { cx: x[i], cy: y[i], class: "force_hit" });
+    const circle = svgEl("circle", { cx: x[i], cy: y[i], class: "force_dot" });
     circle.style.fill = `hsl(${n.hue} 45% 55%)`;
     g.append(hit, circle);
-    const t = svgEl("text", {
-      x: x[i], y: y[i] + radius(n) + baseFont, "text-anchor": "middle", class: "force_label",
-    });
-    t.style.fontSize = `${baseFont.toFixed(1)}px`;
+    const t = svgEl("text", { x: x[i], "text-anchor": "middle", class: "force_label" });
     t.textContent = n.name;
-    if (!labelled.has(i)) t.style.display = "none";
     g.appendChild(t);
     nodeEls.push(g);
+    dotEls.push(circle);
+    hitEls.push(hit);
     labelEls.push(t);
     if (n.href) {
       const a = svgEl("a", { href: n.href });
@@ -522,6 +500,46 @@ function mapView(graph, state) {
     }
   });
 
+  // Semantic labelling: dots and edge widths are constant on screen (dot
+  // radii shrink in world units as you zoom in), while label text scales
+  // with zoom (capped at 2.5×). A label is shown iff there is room for it at
+  // the current scale — largest declaration count wins — so zooming in
+  // reveals more labels as space opens up between nodes.
+  const labelOrder = [...nodes.keys()].sort((a, b) => nodes[b].decls - nodes[a].decls);
+  const visibleLabels = new Set();
+  const relayout = (viewW) => {
+    const scale = viewW / fullW;
+    const zoom = 1 / scale;
+    const f = baseFont * scale * Math.min(zoom, 2.5);
+    const r = nodes.map((n) => radius(n) * scale);
+    nodes.forEach((n, i) => {
+      dotEls[i].setAttribute("r", r[i].toFixed(2));
+      hitEls[i].setAttribute("r", ((radius(n) + hitPad) * scale).toFixed(2));
+      labelEls[i].setAttribute("y", (y[i] + r[i] + f).toFixed(1));
+      labelEls[i].style.fontSize = `${f.toFixed(2)}px`;
+    });
+    visibleLabels.clear();
+    const placed = [];
+    const collides = (b) =>
+      placed.some((o) => b.x0 < o.x1 && o.x0 < b.x1 && b.y0 < o.y1 && o.y0 < b.y1);
+    for (const i of labelOrder) {
+      const w = nodes[i].name.length * f * 0.62;
+      const box = { x0: x[i] - w / 2, x1: x[i] + w / 2, y0: y[i] + r[i], y1: y[i] + r[i] + f * 1.25 };
+      let ok = !collides(box);
+      if (ok) {
+        for (let j = 0; j < nodes.length && ok; j++) {
+          if (j !== i && box.x0 < x[j] + r[j] && x[j] - r[j] < box.x1 &&
+              box.y0 < y[j] + r[j] && y[j] - r[j] < box.y1) ok = false;
+        }
+      }
+      labelEls[i].style.display = ok ? "" : "none";
+      if (ok) {
+        visibleLabels.add(i);
+        placed.push(box);
+      }
+    }
+  };
+
   // Hover: color the node's dependency cones and reveal its label in place.
   const coneCache = new Map();
   let marked = [];
@@ -529,7 +547,7 @@ function mapView(graph, state) {
   const unhover = () => {
     for (const [el2, cls] of marked) el2.classList.remove(cls);
     marked = [];
-    if (hovered !== null && !labelled.has(hovered)) labelEls[hovered].style.display = "none";
+    if (hovered !== null && !visibleLabels.has(hovered)) labelEls[hovered].style.display = "none";
     hovered = null;
   };
   const hover = (i) => {
@@ -557,17 +575,18 @@ function mapView(graph, state) {
   });
 
   // Zoom (wheel, cursor-centered) and pan (drag); double-click resets.
-  // Strokes are non-scaling (CSS); labels are rescaled to keep their
-  // on-screen size, so zooming separates nodes without inflating text.
+  // Label visibility only depends on scale, so relayout runs on zoom, not pan.
   const view = { x: minX, y: minY, w: fullW };
+  let layoutW = null;
   const apply = () => {
     svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${(view.w * fullH) / fullW}`);
-    const f = baseFont * (view.w / fullW);
-    labelEls.forEach((t, i) => {
-      t.style.fontSize = `${f.toFixed(2)}px`;
-      t.setAttribute("y", y[i] + radius(nodes[i]) + f);
-    });
+    if (view.w !== layoutW) {
+      layoutW = view.w;
+      relayout(view.w);
+      if (hovered !== null) labelEls[hovered].style.display = "";
+    }
   };
+  apply();
   svg.addEventListener("wheel", (ev) => {
     ev.preventDefault();
     const rect = svg.getBoundingClientRect();
