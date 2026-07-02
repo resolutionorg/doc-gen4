@@ -130,10 +130,12 @@ panels render from.
   toggle (blast radius: meaning-dependents counted and grouped into module
   prefix clusters — reads as "the X and Y stuff, not the Z stuff" — plus the
   count of proof-only dependents).
-* `atlas.html` (navbar: "dependency atlas"): *trust core* (declarations ranked
-  by meaning mass = how many statements transitively rest on them), *module
+* `atlas.html` (navbar: "dependency atlas"): *core* (declarations ranked by
+  meaning mass = how many statements transitively rest on them), *map*
+  (force-directed module map, deterministic precomputed layout, cluster or
+  per-module granularity, nodes colored by name-prefix cluster), *module
   matrix* (module × module DSM in topological order, canvas, click for the
-  crossing references), *declaration* (search + both panels side by side;
+  crossing references), *declaration* (search + closure DAG + both panels;
   deep-linkable via `atlas.html#decl=Name`).
 
 Known rough edges: names renamed/removed on Mathlib master render as unlinked

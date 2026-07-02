@@ -161,14 +161,26 @@ export class DepGraph {
         groups.push({ prefix: g.prefix.concat([tok]), members });
       }
     }
-    // Drop leading tokens shared by every module (e.g. the project root) from labels.
-    let common = 0;
-    while (all.length > 1 && all.every((m) => m.tokens[common] === all[0].tokens[common])) common++;
+    // Label each cluster with the literal longest common prefix of its
+    // members' module names, so labels are real name prefixes.
+    const lcp = (names) => {
+      let p = names[0];
+      for (const s of names) {
+        let k = 0;
+        while (k < p.length && k < s.length && p[k] === s[k]) k++;
+        p = p.slice(0, k);
+      }
+      return p;
+    };
     this._moduleClusters = groups
-      .map((g) => ({
-        label: g.prefix.length > common ? `${g.prefix.slice(common).join("")}*` : "(other)",
-        modules: g.members.map((m) => m.idx).sort((a, b) => a - b),
-      }))
+      .map((g) => {
+        const names = g.members.map((m) => this.modules[m.idx]);
+        const prefix = names.length === 1 ? names[0] : lcp(names);
+        return {
+          label: names.length === 1 ? names[0] : prefix ? `${prefix}*` : "(other)",
+          modules: g.members.map((m) => m.idx).sort((a, b) => a - b),
+        };
+      })
       .sort((a, b) => a.label.localeCompare(b.label));
     return this._moduleClusters;
   }
@@ -393,6 +405,76 @@ export function renderDag(nodes, edges) {
     });
   }
   return svg;
+}
+
+/**
+ * Deterministic force-directed layout (Fruchterman–Reingold). Positions are
+ * computed once, synchronously — the drawing is static. Initial positions lie
+ * on a golden-angle spiral so layouts are reproducible run to run.
+ *
+ * nodes: array (only its length is used); edges: [[i, j, weight?], ...].
+ * Returns {x, y, size} with coordinates in [0, size]².
+ */
+export function forceLayout(nodes, edges, iterations = 400) {
+  const n = nodes.length;
+  const size = Math.max(420, Math.ceil(Math.sqrt(n) * 95));
+  const k = Math.sqrt((size * size) / Math.max(1, n));
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = i * 2.399963;
+    const r = (size / 2.5) * Math.sqrt((i + 0.5) / n);
+    x[i] = size / 2 + r * Math.cos(a);
+    y[i] = size / 2 + r * Math.sin(a);
+  }
+  const dx = new Float64Array(n);
+  const dy = new Float64Array(n);
+  const ew = edges.map(([, , w]) => 1 + Math.log2(1 + (w ?? 1)));
+  // Repulsion is cut off beyond 2.5k; without a cutoff the summed repulsion of
+  // n nodes exceeds gravity at any distance and the periphery diverges.
+  const cut2 = 2.5 * k * (2.5 * k);
+  let temp = size / 8;
+  for (let it = 0; it < iterations; it++) {
+    dx.fill(0);
+    dy.fill(0);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let ddx = x[i] - x[j];
+        let ddy = y[i] - y[j];
+        let d2 = ddx * ddx + ddy * ddy;
+        if (d2 > cut2) continue;
+        if (d2 < 0.01) {
+          ddx = 0.011 * (i - j);
+          ddy = 0.013;
+          d2 = ddx * ddx + ddy * ddy;
+        }
+        const rep = (k * k) / d2;
+        dx[i] += ddx * rep;
+        dy[i] += ddy * rep;
+        dx[j] -= ddx * rep;
+        dy[j] -= ddy * rep;
+      }
+    }
+    edges.forEach(([a, b], e) => {
+      const ddx = x[a] - x[b];
+      const ddy = y[a] - y[b];
+      const att = (Math.sqrt(ddx * ddx + ddy * ddy) / k) * 0.06 * ew[e];
+      dx[a] -= ddx * att;
+      dy[a] -= ddy * att;
+      dx[b] += ddx * att;
+      dy[b] += ddy * att;
+    });
+    for (let i = 0; i < n; i++) {
+      dx[i] += (size / 2 - x[i]) * 0.03;
+      dy[i] += (size / 2 - y[i]) * 0.03;
+      const d = Math.sqrt(dx[i] * dx[i] + dy[i] * dy[i]) || 1;
+      const cap = Math.min(d, temp);
+      x[i] += (dx[i] / d) * cap;
+      y[i] += (dy[i] / d) * cap;
+    }
+    temp *= 0.985;
+  }
+  return { x, y, size };
 }
 
 /**

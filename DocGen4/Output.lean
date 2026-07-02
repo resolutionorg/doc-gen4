@@ -319,7 +319,8 @@ def htmlPathToModuleName (docDir : System.FilePath) (htmlPath : System.FilePath)
 partial def scanModuleHtmlFiles (docDir : System.FilePath) : IO (Array Name) := do
   -- Files/directories to skip (not module HTML files)
   let skipFiles := ["index.html", "404.html", "navbar.html", "search.html",
-                    "foundational_types.html", "references.html", "tactics.html"]
+                    "foundational_types.html", "references.html", "tactics.html",
+                    "atlas.html"]
   let skipDirs := ["find", "declarations", "src"]
 
   let rec scanDir (dir : System.FilePath) : IO (Array Name) := do
