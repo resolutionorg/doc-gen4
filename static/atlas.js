@@ -667,6 +667,11 @@ function declView(graph, state) {
     a.appendChild(el("code", null, name));
     head.appendChild(a);
     const entry = headers.get(name);
+    if (entry?.info.sourceLink) {
+      const src = el("a", "depgraph_item_src", "source");
+      src.href = entry.info.sourceLink;
+      head.appendChild(src);
+    }
     if (entry) {
       const sig = el("div", "depgraph_item_sig");
       sig.innerHTML = entry.header;

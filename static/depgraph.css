@@ -83,6 +83,16 @@
   opacity: 0.6;
 }
 
+.depgraph_item_src {
+  font-size: 0.8em;
+  opacity: 0.6;
+  margin-left: 0.3em;
+}
+
+.depgraph_item_src:hover {
+  opacity: 1;
+}
+
 .depgraph_item_sig {
   margin-top: 0.25em;
   font-size: 0.92em;
