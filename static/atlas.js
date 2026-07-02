@@ -361,7 +361,36 @@ function mapData(graph, granularity) {
           modules: c.modules.length,
           hue: clusterHue(ci),
         }));
-  return { nodes, edges };
+  const groupOfDecl = graph.nodes.map((nd) => groupOf(nd.m));
+  return { nodes, edges, groupOfDecl };
+}
+
+/**
+ * The dependency cones of one map node, computed on the declaration graph
+ * (module-level transitivity would over-approximate) and projected back to
+ * map nodes. `up` = nodes with declarations that transitively reference the
+ * group's declarations; `down` = nodes the group's declarations reference.
+ */
+function mapCones(graph, groupOfDecl, groupDecls, gi) {
+  const cone = (neighbors) => {
+    const groups = new Set();
+    const seen = new Set(groupDecls[gi]);
+    const stack = [...groupDecls[gi]];
+    while (stack.length) {
+      const i = stack.pop();
+      for (const j of neighbors(i)) {
+        if (!seen.has(j)) {
+          seen.add(j);
+          groups.add(groupOfDecl[j]);
+          stack.push(j);
+        }
+      }
+    }
+    groups.delete(gi);
+    return groups;
+  };
+  const revP = graph.revProof();
+  return { up: cone((i) => revP[i]), down: cone((i) => graph.proofDeps(i)) };
 }
 
 function mapView(graph, state) {
@@ -374,14 +403,16 @@ function mapView(graph, state) {
         "declaration count; module nodes are colored by their name-prefix " +
         "cluster, so a color mixing across the layout means related names do " +
         "not form a dependency neighborhood. Position is emergent: only " +
-        "adjacency is meaningful. Hover for names and edges, click a module " +
-        "to open it."
+        "adjacency is meaningful. Hovering a node shows its dependency cones, " +
+        "computed on the declaration graph: blue = modules that reference it, " +
+        "directly or transitively; orange = modules it references. Click a " +
+        "module to open it."
     )
   );
 
   const granularity = state.mapGranularity ?? "cluster";
   const controls = el("div", "atlas_map_controls");
-  for (const [key, label] of [["cluster", "prefix clusters"], ["module", "one node per module"]]) {
+  for (const [key, label] of [["cluster", "clusters"], ["module", "modules"]]) {
     const a = el("a", "atlas_map_gran" + (granularity === key ? " atlas_tab_on" : ""), label);
     a.href = "javascript:void(0)";
     a.addEventListener("click", () => {
@@ -392,7 +423,9 @@ function mapView(graph, state) {
   }
   container.appendChild(controls);
 
-  const { nodes, edges } = mapData(graph, granularity);
+  const { nodes, edges, groupOfDecl } = mapData(graph, granularity);
+  const groupDecls = nodes.map(() => []);
+  groupOfDecl.forEach((g, i) => groupDecls[g].push(i));
   const { x, y } = forceLayout(nodes, edges);
   const radius = (n) => 3.5 + 2.4 * Math.sqrt(n.decls);
   const pad = 14 + Math.max(...nodes.map(radius));
@@ -409,7 +442,7 @@ function mapView(graph, state) {
 
   let maxW = 1;
   for (const [, , w] of edges) maxW = Math.max(maxW, w);
-  const incident = nodes.map(() => []);
+  const edgeRecs = [];
   for (const [a, b, w] of edges) {
     const line = svgEl("line", {
       x1: x[a], y1: y[a], x2: x[b], y2: y[b],
@@ -417,8 +450,7 @@ function mapView(graph, state) {
       "stroke-width": (0.6 + (1.8 * Math.log(1 + w)) / Math.log(1 + maxW)).toFixed(2),
     });
     svg.appendChild(line);
-    incident[a].push(line);
-    incident[b].push(line);
+    edgeRecs.push({ el: line, a, b });
   }
 
   // Label sizes are in viewBox units, so compensate for the scale-down to
@@ -441,16 +473,12 @@ function mapView(graph, state) {
     nodes.forEach((_, i) => tryLabel(i));
   }
 
+  const nodeEls = [];
   nodes.forEach((n, i) => {
     const g = svgEl("g", { class: "force_node" });
     const circle = svgEl("circle", { cx: x[i], cy: y[i], r: radius(n).toFixed(1) });
     circle.style.fill = `hsl(${n.hue} 45% 55%)`;
-    const title = document.createElementNS(SVG_NS, "title");
-    title.textContent =
-      granularity === "module"
-        ? `${n.name} — ${n.decls} declarations`
-        : `${n.name} — ${n.modules} modules, ${n.decls} declarations`;
-    g.append(title, circle);
+    g.appendChild(circle);
     if (labelled.has(i)) {
       const t = svgEl("text", {
         x: x[i], y: y[i] + radius(n) + fontSize, "text-anchor": "middle", class: "force_label",
@@ -459,6 +487,7 @@ function mapView(graph, state) {
       t.textContent = n.name;
       g.appendChild(t);
     }
+    nodeEls.push(g);
     if (n.href) {
       const a = svgEl("a", { href: n.href });
       a.appendChild(g);
@@ -466,8 +495,58 @@ function mapView(graph, state) {
     } else {
       svg.appendChild(g);
     }
-    g.addEventListener("mouseenter", () => incident[i].forEach((e) => e.classList.add("force_edge_hot")));
-    g.addEventListener("mouseleave", () => incident[i].forEach((e) => e.classList.remove("force_edge_hot")));
+  });
+
+  // Hover: show the node's dependency cones and an immediate label.
+  const hoverName = svgEl("text", { class: "force_hover_name", "text-anchor": "middle" });
+  const hoverStats = svgEl("text", { class: "force_hover_stats", "text-anchor": "middle" });
+  hoverName.style.fontSize = `${(fontSize * 1.15).toFixed(1)}px`;
+  hoverStats.style.fontSize = `${(fontSize * 0.9).toFixed(1)}px`;
+  hoverName.style.display = "none";
+  hoverStats.style.display = "none";
+  svg.append(hoverName, hoverStats);
+
+  const coneCache = new Map();
+  let marked = [];
+  const unhover = () => {
+    svg.classList.remove("force_focus");
+    for (const [el2, cls] of marked) el2.classList.remove(cls);
+    marked = [];
+    hoverName.style.display = "none";
+    hoverStats.style.display = "none";
+  };
+  const hover = (i) => {
+    unhover();
+    if (!coneCache.has(i)) coneCache.set(i, mapCones(graph, groupOfDecl, groupDecls, i));
+    const { up, down } = coneCache.get(i);
+    svg.classList.add("force_focus");
+    const mark = (el2, cls) => {
+      el2.classList.add(cls);
+      marked.push([el2, cls]);
+    };
+    mark(nodeEls[i], "force_hot");
+    for (const j of up) mark(nodeEls[j], "force_up");
+    for (const j of down) mark(nodeEls[j], "force_down");
+    for (const e of edgeRecs) {
+      if (up.has(e.a) && (up.has(e.b) || e.b === i)) mark(e.el, "force_edge_up");
+      else if (down.has(e.b) && (down.has(e.a) || e.a === i)) mark(e.el, "force_edge_down");
+    }
+    const n = nodes[i];
+    // Two stacked lines above the node, or below it when too close to the top.
+    const flip = y[i] - radius(n) - fontSize * 2.8 < minY;
+    const nameY = flip ? y[i] + radius(n) + fontSize * 1.4 : y[i] - radius(n) - fontSize * 1.8;
+    hoverName.setAttribute("x", x[i]);
+    hoverName.setAttribute("y", nameY);
+    hoverName.textContent = n.name;
+    hoverStats.setAttribute("x", x[i]);
+    hoverStats.setAttribute("y", nameY + fontSize * 1.15);
+    hoverStats.textContent = `${n.decls} declarations · used by ${up.size} · uses ${down.size}`;
+    hoverName.style.display = "";
+    hoverStats.style.display = "";
+  };
+  nodeEls.forEach((g, i) => {
+    g.addEventListener("mouseenter", () => hover(i));
+    g.addEventListener("mouseleave", unhover);
   });
 
   const wrap = el("div", "atlas_dag_wrap");
