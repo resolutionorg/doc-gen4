@@ -85,15 +85,23 @@ check_html LibA LibB
 # --- Phase 1b: `example` commands are rendered (recovered from the source) ---
 
 echo "=== Checking example declarations in LibA.html ==="
-if [ "$(grep -c 'class="example_source"' "$DOC_DIR/LibA.html")" -ne 2 ]; then
+if [ "$(grep -c '<div class="example">' "$DOC_DIR/LibA.html")" -ne 2 ]; then
   echo "FAIL: expected 2 example blocks in LibA.html"
   exit 1
 fi
-if ! grep -q 'n + 0 = n' "$DOC_DIR/LibA.html"; then
-  echo "FAIL: example source text missing from LibA.html"
+# Bodies/proofs are never shown
+if grep -q 'Nat.add_zero' "$DOC_DIR/LibA.html"; then
+  echo "FAIL: example body leaked into LibA.html"
   exit 1
 fi
-echo "OK: both examples rendered in LibA.html"
+# The re-elaborated signature hyperlinks the constants it mentions; check that the
+# first example's type links back to libAGreeting (only looking after the first
+# example block so the declaration's own anchor and nav links don't count).
+if ! tr -d '\n' < "$DOC_DIR/LibA.html" | grep -o '<div class="example">.*' | grep -q 'href="[^"]*#libAGreeting"'; then
+  echo "FAIL: example signature does not link libAGreeting in LibA.html"
+  exit 1
+fi
+echo "OK: both examples rendered (linked signatures, no bodies) in LibA.html"
 
 # --- Phase 2: add LibC incrementally, verify A and B survive ---
 

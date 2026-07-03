@@ -235,7 +235,7 @@ def process (task : AnalyzeTask) : MetaM AnalyzerResult := do
   let examplesEnabled := (← IO.getEnv "DOCGEN_EXAMPLES") != some "0"
   if examplesEnabled && task matches .analyzeConcreteModules _ then
     for (moduleName, module) in res.toArray do
-      let examples ← extractExamples env moduleName
+      let examples ← extractExamples moduleName
       if !examples.isEmpty then
         res := res.insert moduleName
           { module with members := module.members ++ examples.map ModuleMember.exampleDecl }

@@ -99,22 +99,30 @@ private def prettyPrintTermStx (stx : Term) (infos : SubExpr.PosMap Elab.Info) :
   }
   return renderTagged (← Widget.tagCodeInfos ctx infos tt)
 
-def Info.ofTypedName (n : Name) (t : Expr) : MetaM Info := do
+/--
+Pretty prints a ∀-telescoped type as signature pieces — the leading binders and the
+result type — through the same delaborator path used for declaration signatures.
+-/
+def prettySignature (t : Expr) (currNamespace : Name := .anonymous) : MetaM (Array Arg × RenderedCode) := do
   -- Use the main signature delaborator. We need to run sanitization, parenthesization, and formatting ourselves
   -- to be able to extract the pieces of the signature right before they are formatted
   -- and then format them individually.
-  let (sigStx, infos) ← withTheReader Core.Context ({ · with currNamespace := n.getPrefix }) <|
+  let (sigStx, infos) ← withTheReader Core.Context ({ · with currNamespace }) <|
     PrettyPrinter.delabCore t (delab := PrettyPrinter.Delaborator.delabForallParamsWithSignature fun binders type =>
       -- Use `declSig` as a data structure so that the binders and type can be put through the sanitizer all together.
       `(declSig| $binders* : $type))
   let sigStx := (sanitizeSyntax sigStx).run' { options := (← getOptions) }
   let sigStx ← PrettyPrinter.parenthesize Parser.Command.declSig.parenthesizer sigStx
   let `(declSig| $binders* : $type) := sigStx
-    | throwError "signature pretty printer failure for {n}"
+    | throwError "signature pretty printer failure for {t}"
   let args ← binders.mapM fun binder => do
     let fmt ← prettyPrintBinder binder infos
     return Arg.mk fmt (!binder.isOfKind ``Parser.Term.explicitBinder)
   let type ← prettyPrintTermStx type infos
+  return (args, type)
+
+def Info.ofTypedName (n : Name) (t : Expr) : MetaM Info := do
+  let (args, type) ← prettySignature t n.getPrefix
   match ← findDeclarationRanges? n with
   -- TODO: Maybe selection range is more relevant? Figure this out in the future
   | some range =>
