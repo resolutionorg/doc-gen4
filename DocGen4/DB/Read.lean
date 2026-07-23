@@ -684,27 +684,35 @@ def mkReadDB (sqlite : SQLite) (values : DocstringValues) : IO ReadDB := do
     getContainedNames name := mutex.atomically do (← get).getContainedNames name
     getTransitiveImports modules := withDbContext "read:transitive_imports" do
       if modules.isEmpty then return #[]
-      -- Uses dynamic SQL (variable number of placeholders) so cannot be pre-prepared. This is not a
-      -- performance problem because it's called at most once per `fromDb` invocation. The only
-      -- interpolated value is `placeholders`, which is built from literal `"(?)"` strings (one per
-      -- module), so there's no user-supplied data included in the generated SQL. Actual module
-      -- names are always bound via `stmt.bind`.
-      let placeholders := ", ".intercalate (modules.toList.map fun _ => "(?)")
-      let sql := s!"
+      -- Seed the recursive walk from a temp table rather than a `VALUES (?),(?),…` list.
+      -- SQLite caps a multi-row VALUES clause at SQLITE_MAX_COMPOUND_SELECT (500 terms),
+      -- which large seabeds (hundreds of local modules) blow past ("too many terms in
+      -- compound SELECT"). Inserting the seeds one row at a time into a temp table
+      -- sidesteps the limit; the recursive CTE reads them back. Called at most once per
+      -- `fromDb` invocation, and the temp table is connection-scoped, so the drop/create
+      -- is safe. Module names are always bound via `stmt.bind`, never interpolated.
+      sqlite.exec "DROP TABLE IF EXISTS transitive_imports_seed"
+      sqlite.exec "CREATE TEMP TABLE transitive_imports_seed (name TEXT PRIMARY KEY)"
+      let seedStmt ← sqlite.prepare "INSERT OR IGNORE INTO transitive_imports_seed (name) VALUES (?)"
+      for h : i in [0:modules.size] do
+        seedStmt.bind 1 modules[i].toString
+        seedStmt.exec
+        seedStmt.reset
+        seedStmt.clearBindings
+      let sql := "
         WITH RECURSIVE transitive_imports(name) AS (
-          VALUES {placeholders}
+          SELECT name FROM transitive_imports_seed
           UNION
           SELECT mi.imported FROM module_imports mi
           JOIN transitive_imports ti ON mi.importer = ti.name
         )
         SELECT DISTINCT name FROM transitive_imports"
       let stmt ← sqlite.prepare sql
-      for h : i in [0:modules.size] do
-        stmt.bind (i.toInt32 + 1) modules[i].toString
       let mut result := #[]
       while (← stmt.step) do
         let name := (← stmt.columnText 0).toName
         result := result.push name
+      sqlite.exec "DROP TABLE IF EXISTS transitive_imports_seed"
       return result
   }
 
