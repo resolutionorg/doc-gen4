@@ -220,18 +220,31 @@ export class HeaderIndex {
 
   static async init() {
     if (!HeaderIndex._promise) {
-      const url = new URL(`${SITE_ROOT}declarations/header-data.bmp`, window.location);
-      HeaderIndex._promise = fetch(url)
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
-          return res.json();
-        })
-        .then((data) => new HeaderIndex(data));
+      HeaderIndex._promise = HeaderIndex._load().then((data) => new HeaderIndex(data));
       HeaderIndex._promise.catch(() => {
         HeaderIndex._promise = null;
       });
     }
     return HeaderIndex._promise;
+  }
+
+  /**
+   * header-data.bmp is minified JSON that compresses ~20x; for large seabeds it
+   * exceeds hosting per-file size limits, so tide-docs ships a gzipped
+   * `header-data.bmp.gz` (decompressed here). Fall back to the plain file for raw
+   * doc-gen4 builds that don't post-process.
+   */
+  static async _load() {
+    const gz = new URL(`${SITE_ROOT}declarations/header-data.bmp.gz`, window.location);
+    const gzRes = await fetch(gz);
+    if (gzRes.ok && gzRes.body) {
+      const stream = gzRes.body.pipeThrough(new DecompressionStream("gzip"));
+      return new Response(stream).json();
+    }
+    const url = new URL(`${SITE_ROOT}declarations/header-data.bmp`, window.location);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+    return res.json();
   }
 
   constructor(data) {
