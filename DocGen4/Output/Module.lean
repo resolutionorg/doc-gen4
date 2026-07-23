@@ -129,13 +129,43 @@ def modDocToHtml (mdoc : ModuleDoc) : HtmlM Html := do
     </div>
 
 /--
-Render a module member, that is either a module doc string or a declaration
-as HTML.
+timaeus fork: render an anonymous `example` declaration like any other declaration —
+the `example` keyword followed by its re-elaborated signature (rendered binders and
+hyperlinked type), and never the body. When the signature could not be re-elaborated
+(`ex.type` is `none`), the signature's source text is shown instead.
+-/
+def exampleToHtml (module : Name) (ex : ExampleDecl) : HtmlM Html := do
+  let inner ← match ex.type with
+  | some type => do
+    -- Mirrors `docInfoHeader`, minus the name.
+    let mut nodes := #[]
+    nodes := nodes.push <| Html.element "span" false #[("class", "decl_kind")] #["example"]
+    for arg in ex.args do
+      nodes := nodes.push (← argToHtml arg)
+    nodes := nodes.push <| Html.element "span" true #[("class", "decl_args")] #[" :"]
+    nodes := nodes.push <div class="decl_type">[← renderedCodeToHtml type]</div>
+    pure <div class="decl_header"> [nodes] </div>
+  | none =>
+    pure <| Html.element "pre" false #[("class", "example_signature")] #[ex.signature]
+  pure
+    <div class="decl">
+      <div class="example">
+        <div class="gh_link">
+          <a href={← getSourceUrl module ex.declarationRange}>source</a>
+        </div>
+        {inner}
+      </div>
+    </div>
+
+/--
+Render a module member, that is either a module doc string, a declaration, or an
+`example` as HTML.
 -/
 def moduleMemberToHtml (module : Name) (member : ModuleMember) : HtmlM Html := do
   match member with
   | ModuleMember.docInfo d => docInfoToHtml module d
   | ModuleMember.modDoc d => modDocToHtml d
+  | ModuleMember.exampleDecl e => exampleToHtml module e
 
 def declarationToNavLink (module : Name) : Html :=
   <div class="nav_link">

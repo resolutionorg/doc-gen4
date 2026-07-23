@@ -351,6 +351,31 @@ CREATE TABLE IF NOT EXISTS declaration_attrs (
   FOREIGN KEY (module_name, position) REFERENCES name_info(module_name, position) ON DELETE CASCADE
 );
 
+-- timaeus fork: anonymous `example` declarations recovered from module sources by a
+-- parser pass. The signature is re-elaborated and serialized like declaration
+-- signatures: rendered binders in module_example_args, rendered result type in `type`.
+-- `type` is NULL when signature elaboration failed; `signature` keeps the raw
+-- signature source text used as the fallback display. Declaration ranges live in
+-- declaration_ranges under the same (module_name, position) key.
+CREATE TABLE IF NOT EXISTS module_examples (
+  module_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  type BLOB,
+  signature TEXT NOT NULL,
+  PRIMARY KEY (module_name, position),
+  FOREIGN KEY (module_name) REFERENCES modules(name) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS module_example_args (
+  module_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  sequence INTEGER NOT NULL,
+  binder BLOB NOT NULL,
+  is_implicit INTEGER NOT NULL,
+  PRIMARY KEY (module_name, position, sequence),
+  FOREIGN KEY (module_name, position) REFERENCES module_examples(module_name, position) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS tactics (
   module_name TEXT NOT NULL,
   internal_name TEXT NOT NULL,

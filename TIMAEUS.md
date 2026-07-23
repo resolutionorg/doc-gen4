@@ -14,9 +14,9 @@ docs are already hosted.
 
 ## What the fork changes
 
-Three env-var-gated behaviours; with none set the fork is byte-identical to
-upstream. See `Main.lean`, `DocGen4/Output.lean`, `DocGen4/Output/Base.lean`,
-`DocGen4/DB.lean`.
+Three env-var-gated behaviours (with none set they are byte-identical to
+upstream), plus `example` rendering, which is on by default. See `Main.lean`,
+`DocGen4/Output.lean`, `DocGen4/Output/Base.lean`, `DocGen4/DB.lean`.
 
 ### `DOCGEN_LOCAL_ROOTS` — trim emitted modules + search index
 
@@ -48,6 +48,28 @@ The book is produced from Mathlib's own published
 `declarations/declaration-data.bmp` (see the `tide-docs` skill). Because we
 resolve links from the **same** data we redirect **to**, every emitted link
 points exactly where the hosted site currently serves that declaration.
+
+### `example` declarations — recovered from the source (`DOCGEN_EXAMPLES`)
+
+Lean elaborates `example` inside `withoutModifyingEnv` (`Lean.Elab.MutualDef`),
+so examples never persist in the environment or olean — upstream doc-gen4,
+which enumerates `env.constants`, cannot see them and silently drops them from
+module pages. The fork recovers them by re-parsing each module's source file to
+locate the `example` commands (tracking `namespace`/`section`/`open` scopes),
+then re-elaborating each one's **signature only** — binders and type, never the
+body/proof — in the already-loaded environment (`Process.extractExamples` in
+`DocGen4/Process/Examples.lean`). The signature is pretty-printed through the
+same delaborator path as declaration signatures, so each example renders as a
+declaration-style block — the `example` keyword followed by its binders and
+hyperlinked type — interleaved with the other members in source order. Stored
+in the DB like declaration signatures (`module_examples` +
+`module_example_args`). If the source file cannot be found or parsed, that
+module simply has no examples; if a signature cannot be re-elaborated (e.g. it
+depends on section `variable`s, or has no type ascription), the block falls
+back to the signature's source text (still never the body) and a warning is
+logged. On by default for project ingestion (`single`/`ingest`); skipped for
+`genCore`; set `DOCGEN_EXAMPLES=0` to disable. Examples are anonymous, so they
+never appear in the search index, nav, or dep atlas.
 
 ## No base DB: what the emitted database contains
 

@@ -104,6 +104,7 @@ private structure ReadStmts where
   buildNameInfoStmt : SQLite.Stmt
   buildInternalNamesStmt : SQLite.Stmt
   loadModuleMembersStmt : SQLite.Stmt
+  loadExampleArgsStmt : SQLite.Stmt
   loadTacticsStmt : SQLite.Stmt
   loadTacticTagsStmt : SQLite.Stmt
   loadAllTacticsStmt : SQLite.Stmt
@@ -162,12 +163,16 @@ private def ReadStmts.prepare (sqlite : SQLite) (values : DocstringValues) : IO 
   let buildNameInfoStmt ← sqlite.prepare "SELECT name, module_name FROM name_info"
   let buildInternalNamesStmt ← sqlite.prepare "SELECT name, target_module FROM internal_names"
   let loadModuleMembersStmt ← sqlite.prepare
-    "SELECT position, kind, name, type, sorried, render, NULL as mod_doc \
+    "SELECT position, kind, name, type, sorried, render, NULL as mod_doc, NULL as example_signature \
      FROM name_info WHERE module_name = ? \
      UNION ALL \
-     SELECT position, NULL, NULL, NULL, 0, 0, text \
+     SELECT position, NULL, NULL, NULL, 0, 0, text, NULL \
      FROM module_docs_markdown WHERE module_name = ? \
+     UNION ALL \
+     SELECT position, NULL, NULL, type, 0, 0, NULL, signature \
+     FROM module_examples WHERE module_name = ? \
      ORDER BY position"
+  let loadExampleArgsStmt ← sqlite.prepare "SELECT binder, is_implicit FROM module_example_args WHERE module_name = ? AND position = ? ORDER BY sequence"
   let loadTacticsStmt ← sqlite.prepare "SELECT internal_name, user_name, doc_string FROM tactics WHERE module_name = ?"
   let loadTacticTagsStmt ← sqlite.prepare "SELECT tag FROM tactic_tags WHERE module_name = ? AND internal_name = ?"
   let loadAllTacticsStmt ← sqlite.prepare
@@ -192,9 +197,22 @@ private def ReadStmts.prepare (sqlite : SQLite) (values : DocstringValues) : IO 
     readInductiveStmt, readStructureStmt, readClassInductiveStmt,
     getModuleNamesStmt, getModuleSourceUrlsStmt, getModuleImportsStmt,
     buildNameInfoStmt, buildInternalNamesStmt,
-    loadModuleMembersStmt, loadTacticsStmt, loadTacticTagsStmt,
+    loadModuleMembersStmt, loadExampleArgsStmt, loadTacticsStmt, loadTacticTagsStmt,
     loadAllTacticsStmt, loadAllTacticTagsStmt, getContainedNamesStmt
   }
+
+open Lean SQLite.Blob in
+private def ReadStmts.loadExampleArgs (s : ReadStmts) (moduleName : String) (position : Int64) : IO (Array Process.Arg) := withDbContext "read:module_example_args" do
+  s.loadExampleArgsStmt.bind 1 moduleName
+  s.loadExampleArgsStmt.bind 2 position
+  let mut args := #[]
+  while (← s.loadExampleArgsStmt.step) do
+    let binderBlob ← s.loadExampleArgsStmt.columnBlob 0
+    let binder ← readRenderedCode binderBlob
+    let isImplicit := (← s.loadExampleArgsStmt.columnInt64 1) != 0
+    args := args.push { binder, implicit := isImplicit }
+  done s.loadExampleArgsStmt
+  return args
 
 open Lean SQLite.Blob in
 private def ReadStmts.loadArgs (s : ReadStmts) (moduleName : String) (position : Int64) : IO (Array Process.Arg) := withDbContext "read:declaration_args" do
@@ -588,17 +606,29 @@ open Lean SQLite.Blob in
 private def ReadStmts.loadModule (s : ReadStmts) (moduleName : Name) : IO Process.Module := do
   let modNameStr := moduleName.toString
   let imports ← s.getModuleImports moduleName
-  -- Single query returns declarations and module docstrings in position order
+  -- Single query returns declarations, module docstrings, and examples in position order
   s.loadModuleMembersStmt.bind 1 modNameStr
   s.loadModuleMembersStmt.bind 2 modNameStr
+  s.loadModuleMembersStmt.bind 3 modNameStr
   let mut members : Array Process.ModuleMember := #[]
   while (← s.loadModuleMembersStmt.step) do
     let position ← s.loadModuleMembersStmt.columnInt64 0
     if (← s.loadModuleMembersStmt.columnNull 1) then
-      -- Module docstrings (kind column is NULL)
-      let doc ← s.loadModuleMembersStmt.columnText 6
+      -- Module docstrings and examples (kind column is NULL)
+      let isExample := !(← s.loadModuleMembersStmt.columnNull 7)
       match (← s.loadDeclarationRange modNameStr position) with
-      | some declRange => members := members.push (.modDoc { doc, declarationRange := declRange })
+      | some declRange =>
+        if isExample then
+          let signature ← s.loadModuleMembersStmt.columnText 7
+          let type ← if (← s.loadModuleMembersStmt.columnNull 3) then
+              pure none
+            else
+              some <$> readRenderedCode (← s.loadModuleMembersStmt.columnBlob 3)
+          let args ← s.loadExampleArgs modNameStr position
+          members := members.push (.exampleDecl { args, type, signature, declarationRange := declRange })
+        else
+          let doc ← s.loadModuleMembersStmt.columnText 6
+          members := members.push (.modDoc { doc, declarationRange := declRange })
       | none => IO.eprintln s!"warning: missing declaration range for module docstring at position {position} in module '{modNameStr}'; skipping"
     else
       -- Declaration

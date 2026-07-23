@@ -600,6 +600,20 @@ main h2, main h3, main h4, main h5, main h6 {
     border-top: 2px solid var(--axiom-and-constant-color);
 }
 
+/* timaeus fork: anonymous `example` blocks, recovered from source */
+.example {
+    border-left: 10px solid var(--theorem-color);
+    border-top: 2px solid var(--theorem-color);
+}
+
+/* fallback display when an example's signature could not be re-elaborated */
+.example .example_signature {
+    font-size: 92%;
+    font-family: 'JuliaMono', monospace;
+    margin: 8px 0;
+    padding: 4px;
+}
+
 .structure, .inductive, .class {
     border-left: 10px solid var(--structure-and-inductive-color);
     border-top: 2px solid var(--structure-and-inductive-color);
@@ -631,7 +645,7 @@ main h2, main h3, main h4, main h5, main h6 {
     box-shadow: 0 0 0 1px hsla(var(--def-color-hsl-angle), 61%, calc(var(--starting-percentage) - 5%*(var(--fn) + 1)));
     border-radius: 5px;
 }
-.theorem .fn:hover {
+.theorem .fn:hover, .example .fn:hover {
     background-color: hsla(var(--theorem-color-hsl-angle), 62%, calc(var(--starting-percentage) - 5%*var(--fn)));
     box-shadow: 0 0 0 1px hsla(var(--theorem-color-hsl-angle), 62%, calc(var(--starting-percentage) - 5%*(var(--fn) + 1)));
     border-radius: 5px;
