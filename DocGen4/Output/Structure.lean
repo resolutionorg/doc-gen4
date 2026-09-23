@@ -67,9 +67,19 @@ def fieldToHtml (structName : Name) (f : Process.FieldInfo) : HtmlM Html := do
     -- source code range of the structure (the structure elaborator associates them with the entry
     -- in the `extends` clause).
     let projName := structName ++ getShort' f.name
+    -- timaeus fork: the inherited field's projection may live outside the database (e.g. in
+    -- Mathlib, for trimmed output); resolve it through the external address book, else no link.
+    let fieldLink? : Option String ←
+      if (← getResult).name2ModIdx.contains f.name then
+        pure (some (← declNameToLink f.name))
+      else
+        externalDeclLink? f.name
+    let fieldName : Html := match fieldLink? with
+      | some link => <a href={link}>{shortName}</a>
+      | none => Html.text shortName
     let inner :=
       <div class="structure_field_info">
-        <a href={← declNameToLink f.name}>{shortName}</a> [args] {" : "} [← renderedCodeToHtml f.type]
+        {fieldName} [args] {" : "} [← renderedCodeToHtml f.type]
       </div>
     if (← getResult).containedNames[structName]?.any (·.contains projName) then
       let name := projName.toString
