@@ -49,6 +49,16 @@ The book is produced from Mathlib's own published
 resolve links from the **same** data we redirect **to**, every emitted link
 points exactly where the hosted site currently serves that declaration.
 
+### Link hygiene in trimmed output
+
+Upstream assumes every referenced declaration and module is in the database, which a
+trimmed database breaks. Three places are adjusted so external or unknown targets go
+through the address book or render unlinked instead of producing dead links:
+inherited structure fields are not recorded in `internal_names` (the parent's module
+owns the projection), inherited fields on structure pages resolve via
+`externalDeclLink?`, and docstring code spans of the form `Path/To/Module.lean` link
+only when that module is documented.
+
 ## No base DB: what the emitted database contains
 
 Earlier iterations built a shared "base DB" of all Mathlib's `docInfo` (~50 min,
