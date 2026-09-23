@@ -15,6 +15,7 @@ import DocGen4.Output.References
 import DocGen4.Output.Bibtex
 import DocGen4.Output.SourceLinker
 import DocGen4.Output.Search
+import DocGen4.Output.DepGraph
 import DocGen4.Output.Tactics
 import DocGen4.Output.ToJson
 import DocGen4.Output.FoundationalTypes
@@ -54,10 +55,16 @@ def htmlOutputSetup (config : SiteBaseContext) (tacticInfo : Array (Process.Tact
   let foundationalTypesHtml := ReaderT.run foundationalTypes config |>.toString
   let navbarHtml := ReaderT.run navbar config |>.toString
   let searchHtml := ReaderT.run search config |>.toString
+  let atlasHtml := ReaderT.run depAtlas config |>.toString
   let referencesHtml := ReaderT.run (references (← collectBackrefs config.buildDir)) config |>.toString
   let tacticsHtml := ReaderT.run (tactics tacticInfo) config |>.toString
   let docGenStatic := #[
     ("style.css", styleCss),
+    ("depgraph.css", depgraphCss),
+    ("depgraph.js", depgraphJs),
+    ("depgraph-decl.js", depgraphDeclJs),
+    ("atlas.js", atlasJs),
+    ("atlas.html", atlasHtml),
     ("favicon.svg", faviconSvg),
     ("declaration-data.js", declarationDataCenterJs),
     ("color-scheme.js", colorSchemeJs),
@@ -173,6 +180,30 @@ def htmlOutputResultsParallel (baseConfig : SiteBaseContext) (dbPath : System.Fi
     | .error e => throw e
   return (outputs, jsonModules)
 
+/-- timaeus fork: parse the comma-separated `DOCGEN_LOCAL_ROOTS` env var into
+top-level module roots. Empty when the var is unset. Shared by the base-context
+setup (link redirection) and `fromDb` (output trimming). -/
+def readLocalRoots : IO (Array Name) := do
+  match ← IO.getEnv "DOCGEN_LOCAL_ROOTS" with
+  | none => return #[]
+  | some s => return (s.splitOn ",").toArray.filterMap fun x =>
+      let x := x.trim
+      if x.isEmpty then none else some x.toName
+
+/-- timaeus fork: load the external declaration address book (name -> docLink)
+from the TSV pointed at by `DOCGEN_EXTERNAL_DECL_DATA` (produced from the hosted
+`declaration-data.bmp`). Each line is `name\tdocLink`. Empty when unset. -/
+def readExternalDeclData : IO (Std.HashMap Name String) := do
+  match ← IO.getEnv "DOCGEN_EXTERNAL_DECL_DATA" with
+  | none => return {}
+  | some path =>
+    let mut m : Std.HashMap Name String := {}
+    for line in (← IO.FS.lines path) do
+      match line.splitOn "\t" with
+      | [n, d] => m := m.insert n.toName d
+      | _ => pure ()
+    return m
+
 def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
     IO SiteBaseContext := do
   let contents ← FS.readFile (declarationsBasePath buildDir / "references.json") <|> (pure "[]")
@@ -184,12 +215,19 @@ def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
     | .error err =>
       throw <| IO.userError s!"Failed to parse 'references.json': {err}"
     | .ok (refs : Array BibItem) =>
+      -- timaeus fork: external-docs redirect config from the environment.
+      let externalDocsBase ← IO.getEnv "DOCGEN_EXTERNAL_BASE"
+      let localRoots ← readLocalRoots
+      let externalDeclData ← readExternalDeclData
       return {
         buildDir := buildDir
         depthToRoot := 0
         currentName := none
         hierarchy := hierarchy
         refs := refs
+        externalDocsBase := externalDocsBase
+        localRoots := localRoots
+        externalDeclData := externalDeclData
       }
 
 def htmlOutputIndex (baseConfig : SiteBaseContext) (modules : Array JsonModule) (tacticInfo : Array (Process.TacticInfo Html)) : IO Unit := do
@@ -281,7 +319,8 @@ def htmlPathToModuleName (docDir : System.FilePath) (htmlPath : System.FilePath)
 partial def scanModuleHtmlFiles (docDir : System.FilePath) : IO (Array Name) := do
   -- Files/directories to skip (not module HTML files)
   let skipFiles := ["index.html", "404.html", "navbar.html", "search.html",
-                    "foundational_types.html", "references.html", "tactics.html"]
+                    "foundational_types.html", "references.html", "tactics.html",
+                    "atlas.html"]
   let skipDirs := ["find", "declarations", "src"]
 
   let rec scanDir (dir : System.FilePath) : IO (Array Name) := do

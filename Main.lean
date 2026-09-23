@@ -22,6 +22,23 @@ def runSingleCmd (p : Parsed) : IO UInt32 := do
   updateModuleDb builtinDocstringValues doc buildDir dbFile (some sourceUri)
   return 0
 
+/--
+timaeus fork: ingest MANY modules into a DB in a single environment load (one
+`importModules`, then analyze each listed module). Used to populate a fresh
+database with a repo's own modules; each module's GitHub blob URL is derived
+from `--source-base`.
+-/
+def runIngestCmd (p : Parsed) : IO UInt32 := do
+  let buildDir := match p.flag? "build" with
+    | some dir => dir.as! String
+    | none => ".lake/build"
+  let dbFile := p.positionalArg! "db" |>.as! String
+  let sourceBase := (p.flag? "source-base").map (·.as! String)
+  let modules := (p.variableArgsAs! String).map String.toName
+  let doc ← load <| .analyzeConcreteModules modules
+  updateModuleDb builtinDocstringValues doc buildDir dbFile none (sourceBase? := sourceBase)
+  return 0
+
 def runGenCoreCmd (p : Parsed) : IO UInt32 := do
   let buildDir := match p.flag? "build" with
     | some dir => dir.as! String
@@ -89,11 +106,23 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
   let linkCtx ← db.loadLinkingContext
 
   -- Determine which modules to generate HTML for
-  let targetModules ←
+  let targetModulesAll ←
     if moduleRoots.isEmpty then
       pure linkCtx.moduleNames
     else
       db.getTransitiveImports moduleRoots
+  -- timaeus fork: when DOCGEN_LOCAL_ROOTS is set, emit HTML (and search index
+  -- entries) only for modules whose top-level root is in the allowlist -- this
+  -- trims a Mathlib-importing project's docs to just its own modules. Links to
+  -- non-local modules and declarations are redirected out (see moduleNameToLink
+  -- and externalDeclLink?).
+  let localRoots ← readLocalRoots
+  let targetModules ←
+    if localRoots.isEmpty then pure targetModulesAll
+    else
+      let kept := targetModulesAll.filter (fun m => localRoots.contains m.getRoot)
+      IO.println s!"timaeus: emitting {kept.size}/{targetModulesAll.size} modules (roots: {localRoots})"
+      pure kept
 
   let baseConfig ← getSimpleBaseContext buildDir (Hierarchy.fromArray targetModules)
   -- Add `references` pseudo-module to hierarchy only when bibliography data exists
@@ -118,6 +147,24 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
 
   -- Generate the search index (declaration-data.bmp)
   htmlOutputIndex baseConfig jsonModules allTactics
+
+  -- timaeus fork: emit the dep atlas graph, and the header index that the
+  -- statement-closure panels render declaration signatures from. Each is
+  -- best-effort and independent: the views degrade to "data unavailable" in
+  -- the browser, so emission must never fail a docs build (e.g. a database
+  -- written before the dep tables existed). On failure any stale depgraph.json
+  -- is removed — its node/module indices would not match the current pages.
+  try
+    depGraphOutput baseConfig dbPath linkCtx jsonModules
+  catch e =>
+    IO.eprintln s!"WARNING: dep atlas emission failed: {e}"
+    let stale := Output.basePath buildDir / "declarations" / "depgraph.json"
+    if ← stale.pathExists then
+      IO.FS.removeFile stale
+  try
+    headerDataOutput buildDir
+  catch e =>
+    IO.eprintln s!"WARNING: header-data emission failed: {e}"
 
   -- Update navbar to include all modules on disk
   updateNavbarFromDisk buildDir
@@ -155,6 +202,19 @@ def singleCmd := `[Cli|
     module : String; "The module to document."
     db : String; "Path to the SQLite database (relative to build dir)"
     sourceUri : String; "The sourceUri as computed by the Lake facet"
+]
+
+def ingestCmd := `[Cli|
+  ingest VIA runIngestCmd;
+  "Ingest many modules into an existing DB in one environment load (timaeus fork)."
+
+  FLAGS:
+    b, build : String; "Build directory."
+    s, "source-base" : String; "Base GitHub blob URL, e.g. https://github.com/OWNER/REPO/blob/SHA/"
+
+  ARGS:
+    db : String; "Path to the SQLite database (relative to build dir)"
+    ...modules : String; "The modules to ingest."
 ]
 
 def genCoreCmd := `[Cli|
@@ -212,6 +272,7 @@ def docGenCmd : Cmd := `[Cli|
 
   SUBCOMMANDS:
     singleCmd;
+    ingestCmd;
     genCoreCmd;
     bibPrepassCmd;
     headerDataCmd;

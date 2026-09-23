@@ -368,6 +368,26 @@ CREATE TABLE IF NOT EXISTS tactic_tags (
   FOREIGN KEY (module_name, internal_name) REFERENCES tactics(module_name, internal_name) ON DELETE CASCADE
 );
 
+-- timaeus fork: collapsed declaration-level dependencies for the dep atlas.
+-- One row per rendered declaration; edges reference targets by name because
+-- targets may live in modules ingested by a different run (or externally).
+CREATE TABLE IF NOT EXISTS dep_nodes (
+  name TEXT PRIMARY KEY,
+  module_name TEXT NOT NULL,
+  prop_value INTEGER NOT NULL,
+  FOREIGN KEY (module_name) REFERENCES modules(name) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_dep_nodes_module ON dep_nodes(module_name);
+
+CREATE TABLE IF NOT EXISTS dep_edges (
+  source TEXT NOT NULL,
+  target TEXT NOT NULL,
+  is_type INTEGER NOT NULL,
+  PRIMARY KEY (source, target, is_type),
+  FOREIGN KEY (source) REFERENCES dep_nodes(name) ON DELETE CASCADE
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS schema_meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
