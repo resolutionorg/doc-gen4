@@ -1,7 +1,7 @@
 # doc-gen4 (timaeus fork)
 
 Fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4) at tag
-`v4.29.0`, patched so that a Mathlib-importing project can publish docs for **its
+`v4.33.1` (originally forked at `v4.29.0`), patched so that a Mathlib-importing project can publish docs for **its
 own modules only** while still linking references to Mathlib/core declarations
 out to the already-hosted Mathlib docs.
 
