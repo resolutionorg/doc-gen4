@@ -685,8 +685,12 @@ where
       let projName := field.name.toString
       db.saveStructureField modName pos fieldSeq projName field.type field.isDirect
       -- Save projection function name to internal_names so it can be linked
-      -- (projection functions like _private.*.field link to their parent structure)
-      db.saveInternalName field.name modName pos
+      -- (projection functions like _private.*.field link to their parent structure).
+      -- timaeus fork: direct fields only. An inherited field's projection belongs to the parent's
+      -- module; in a trimmed database without that module it must fall through to the external
+      -- address book instead of linking to this structure, whose page has no anchor for it.
+      if field.isDirect then
+        db.saveInternalName field.name modName pos
       -- Save field args to structure_field_args
       for h : j in 0...field.args.size do
         let arg := field.args[j]
