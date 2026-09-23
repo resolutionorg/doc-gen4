@@ -1,7 +1,7 @@
 # `doc-gen4` (Timaeus fork)
 Document Generator for Lean 4
 
-> **This is Timaeus's internal fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.29.0` (upstream commit `aa4c3e4`).**
+> **This is Timaeus's internal fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.33.1` (upstream commit `e2af49a`; originally forked at `v4.29.0`).**
 > It adds three env-gated features so a Mathlib-importing project can publish
 > docs for its own modules only, resolving references to Mathlib/core against
 > the hosted Mathlib docs (no local Mathlib database). With none of the env vars
