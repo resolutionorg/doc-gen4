@@ -20,8 +20,8 @@ toolchain.
 
 ## What the fork changes
 
-Three env-var-gated link behaviours, an `ingest` command, a few link-hygiene
-fixes, and the dependency atlas. See `Main.lean`, `DocGen4/Output.lean`,
+Three env-var-gated link behaviours, a gzip option for the atlas header index, an
+`ingest` command, a few link-hygiene fixes, and the dependency atlas. See `Main.lean`, `DocGen4/Output.lean`,
 `DocGen4/Output/Base.lean`, `DocGen4/DB.lean`, and for the atlas
 `DocGen4/Process/DepGraph.lean`, `DocGen4/Output/DepGraph.lean` and `static/`.
 With none of the env vars set, the emitted pages and links are those of upstream,
@@ -46,18 +46,30 @@ data.
 
 ### `DOCGEN_EXTERNAL_DECL_DATA` — resolve external *declaration* links
 
-Path to a `name\tdocLink` TSV — the external **address book**. In
-`renderedCodeToHtmlAux` (`.const` case), a declaration name that is **not** in
-the local database's `name2ModIdx` is looked up here; if found, it links to
+Path to the external **address book**: Mathlib's published
+`declarations/declaration-data.bmp`, as downloaded (JSON whose `declarations`
+object maps each name to an object with a `docLink`). In `renderedCodeToHtmlAux`
+(`.const` case), a declaration name that is **not** in the local database's
+`name2ModIdx` is looked up here; if found, it links to
 `<DOCGEN_EXTERNAL_BASE>/<docLink>` (a leading `./` in `docLink` is dropped). This
 is what lets the emitted database contain **only the project's own modules**:
 references to Mathlib/core decls are resolved from this book rather than from a
 locally-built Mathlib database.
 
-The book is produced from Mathlib's own published
-`declarations/declaration-data.bmp` (see [Usage](#usage)). Because links are
-resolved from the **same** data they are redirected **to**, every emitted link
-points exactly where the hosted site currently serves that declaration.
+Because links are resolved from the **same** data they are redirected **to**,
+every emitted link points exactly where the hosted site currently serves that
+declaration. A file that does not parse is a hard error: a site emitted without
+external links would look like success. (Loading the 68 MB file takes about a
+second.)
+
+### `DOCGEN_GZIP_HEADER_DATA` — ship the atlas header index gzipped
+
+`declarations/header-data.bmp` (the signatures the atlas panels render from) is
+minified JSON that compresses about twentyfold, and the plain file can exceed
+hosts' per-file limits (Cloudflare Pages: 25 MiB). When this variable is set,
+`headerDataOutput` replaces it with `header-data.bmp.gz` (via the `gzip`
+binary). The atlas client fetches the `.gz` first and falls back to the plain
+file, so both layouts serve.
 
 ### `ingest` — many modules, one environment load
 
@@ -177,7 +189,7 @@ the views show that the data is unavailable, but the docs build succeeds.
 `header-data.bmp` is minified JSON that compresses about twentyfold and can
 exceed a host's per-file size limit for large projects. The panels first fetch
 `declarations/header-data.bmp.gz` (decompressed in the browser) and fall back to
-the plain file, so a deployment may gzip it and delete the original.
+the plain file; `DOCGEN_GZIP_HEADER_DATA` makes the emitter ship the `.gz` alone.
 
 Known rough edges: names renamed/removed on Mathlib master render as unlinked
 chips (same version-skew as HTML links); mutual definitions form 2-cycles that
@@ -240,18 +252,12 @@ the whole import closure, Mathlib included). A build has four steps.
    Build the project itself first (`lake build` in the project root), then run
    `lake update doc-gen4` in `docbuild/`.
 
-2. **The address book.** Fetch Mathlib's published declaration index and flatten
-   it to the `name\tdocLink` TSV that `DOCGEN_EXTERNAL_DECL_DATA` reads:
+2. **The address book.** Download Mathlib's published declaration index; the
+   fork reads it as is:
 
-   ```python
-   import json, urllib.request
-   base = "https://leanprover-community.github.io/mathlib4_docs/"
-   with urllib.request.urlopen(base + "declarations/declaration-data.bmp") as r:
-       decls = json.load(r)["declarations"]
-   with open("decl.tsv", "w", encoding="utf-8") as f:
-       for name, info in decls.items():
-           if link := info.get("docLink"):
-               f.write(f"{name}\t{link}\n")
+   ```sh
+   curl -sL -o decl-data.bmp \
+     https://leanprover-community.github.io/mathlib4_docs/declarations/declaration-data.bmp
    ```
 
 3. **Ingest the project's modules** into a fresh database, from `docbuild/`
@@ -269,13 +275,14 @@ the whole import closure, Mathlib included). A build has four steps.
    ```sh
    DOCGEN_LOCAL_ROOTS=MyProject \
    DOCGEN_EXTERNAL_BASE=https://leanprover-community.github.io/mathlib4_docs/ \
-   DOCGEN_EXTERNAL_DECL_DATA="$PWD/decl.tsv" \
+   DOCGEN_EXTERNAL_DECL_DATA="$PWD/decl-data.bmp" \
+   DOCGEN_GZIP_HEADER_DATA=1 \
    lake exe doc-gen4 fromDb --build "$PWD/emit" --manifest "$PWD/emit/manifest.json" \
      "$PWD/work.db" MyProject MyProject.Foo MyProject.Bar ...
    ```
 
    The site is in `emit/doc/`. Its links are relative, so it can be served from
-   any path; optionally gzip `declarations/header-data.bmp` as described above.
+   any path.
 
 Two points about choosing the module list:
 
