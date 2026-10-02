@@ -686,7 +686,7 @@ def mkReadDB (sqlite : SQLite) (values : DocstringValues) : IO ReadDB := do
       if modules.isEmpty then return #[]
       -- Seed the recursive walk from a temp table rather than a `VALUES (?),(?),…` list.
       -- SQLite caps a multi-row VALUES clause at SQLITE_MAX_COMPOUND_SELECT (500 terms),
-      -- which large seabeds (hundreds of local modules) blow past ("too many terms in
+      -- which large projects (hundreds of local modules) blow past ("too many terms in
       -- compound SELECT"). Inserting the seeds one row at a time into a temp table
       -- sidesteps the limit; the recursive CTE reads them back. Called at most once per
       -- `fromDb` invocation, and the temp table is connection-scoped, so the drop/create
