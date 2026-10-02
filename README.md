@@ -23,7 +23,7 @@ limitations and a complete build recipe. In brief:
   `moduleNameToLink` redirects links for modules outside `DOCGEN_LOCAL_ROOTS` to
   this base instead of a local relative path, keeping Mathlib/core references
   clickable against the already-hosted docs. (`DocGen4/Output/Base.lean`)
-- **`DOCGEN_EXTERNAL_DECL_DATA`** (path to a `name\tdocLink` TSV) — a declaration
+- **`DOCGEN_EXTERNAL_DECL_DATA`** (path to a hosted `declaration-data.bmp`, as downloaded) — a declaration
   reference not found in the local database is resolved from this **address
   book** (built from Mathlib's own published `declaration-data.bmp`). This is
   what lets the emitted database contain **only the project's own modules** —

@@ -191,18 +191,30 @@ def readLocalRoots : IO (Array Name) := do
       if x.isEmpty then none else some x.toName
 
 /-- timaeus fork: load the external declaration address book (name -> docLink)
-from the TSV pointed at by `DOCGEN_EXTERNAL_DECL_DATA` (produced from the hosted
-`declaration-data.bmp`). Each line is `name\tdocLink`. Empty when unset. -/
+from the file pointed at by `DOCGEN_EXTERNAL_DECL_DATA`: a hosted
+`declarations/declaration-data.bmp` as published (JSON whose `declarations`
+object maps each name to an object with a `docLink`), so callers pass the
+downloaded file unchanged. Empty when unset. A file that does not parse is a
+hard error: a site emitted without external links would look like success. -/
 def readExternalDeclData : IO (Std.HashMap Name String) := do
   match ← IO.getEnv "DOCGEN_EXTERNAL_DECL_DATA" with
   | none => return {}
   | some path =>
-    let mut m : Std.HashMap Name String := {}
-    for line in (← IO.FS.lines path) do
-      match line.splitOn "\t" with
-      | [n, d] => m := m.insert n.toName d
-      | _ => pure ()
-    return m
+    let contents ← IO.FS.readFile path
+    let json ← match Json.parse contents with
+      | .ok j => pure j
+      | .error e =>
+        throw <| IO.userError s!"DOCGEN_EXTERNAL_DECL_DATA: {path} is not JSON declaration data: {e}"
+    let entries ← match json.getObjVal? "declarations" |>.bind (·.getObj?) with
+      | .ok o => pure o
+      | .error e =>
+        throw <| IO.userError s!"DOCGEN_EXTERNAL_DECL_DATA: {path} has no 'declarations' object: {e}"
+    return entries.foldl (init := {}) fun m name info =>
+      match info.getObjValAs? String "docLink" with
+      | .ok link =>
+        if link.isEmpty then m
+        else m.insert name.toName (if link.startsWith "./" then (link.drop 2).toString else link)
+      | .error _ => m
 
 def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
     IO SiteBaseContext := do
@@ -289,6 +301,15 @@ def headerDataOutput (buildDir : System.FilePath) : IO Unit := do
   let declarationDir := basePath buildDir / "declarations"
   FS.createDirAll declarationDir
   FS.writeFile (declarationDir / "header-data.bmp") finalHeaderJson.compress
+  -- timaeus fork: the header index is minified JSON that compresses about twentyfold, and the
+  -- plain file can exceed hosts' per-file limits (Cloudflare Pages: 25 MiB). With
+  -- DOCGEN_GZIP_HEADER_DATA set it is shipped as `header-data.bmp.gz` instead, which the atlas
+  -- client fetches first, falling back to the plain file.
+  if (← IO.getEnv "DOCGEN_GZIP_HEADER_DATA").isSome then
+    let headerPath := declarationDir / "header-data.bmp"
+    let out ← IO.Process.output { cmd := "gzip", args := #["-9", "-f", headerPath.toString] }
+    if out.exitCode != 0 then
+      throw <| IO.userError s!"DOCGEN_GZIP_HEADER_DATA: gzip failed on {headerPath}: {out.stderr}"
 
 /-- Converts an HTML file path to a module name: `doc/A/B/C.html` -> `A.B.C`. -/
 def htmlPathToModuleName (docDir : System.FilePath) (htmlPath : System.FilePath) : Option Name :=
