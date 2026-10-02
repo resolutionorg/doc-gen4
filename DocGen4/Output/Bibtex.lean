@@ -43,12 +43,23 @@ partial def cToPlaintext : Content → String
 
 end
 
+/-- timaeus fork: an entry's `shorthand` field, when it has one, is its label, as in biblatex,
+where the field replaces the generated label in citations and in the bibliography. Otherwise the
+label is the author-year tag BibtexQuery generates (`[Kol07]`), which strips diacritics (`[Wlo05]`
+for Włodarczyk), so a bibliography whose keys carry them (`Wło05`) can set the label it cites by. -/
+def withShorthand (e : ProcessedEntry) : ProcessedEntry :=
+  match e.tags["shorthand"]? with
+  | some content =>
+    let label := (TexDiacritics.TexContent.toPlaintextArray content).trimAscii.copy
+    if label.isEmpty then e else { e with tag := s!"[{label}]" }
+  | none => e
+
 /-- Process the contents of bib file. -/
 def process' (contents : String) : Except String (Array BibItem) := do
   match BibtexQuery.Parser.bibtexFile ⟨contents, contents.startPos⟩ with
   | .success _ arr =>
     let arr ← arr.toArray.filterMapM ProcessedEntry.ofEntry
-    return arr |> sortEntry |> deduplicateTag |>.map fun x =>
+    return arr.map withShorthand |> sortEntry |> deduplicateTag |>.map fun x =>
       let html := Formatter.format x
       {
         citekey := x.name

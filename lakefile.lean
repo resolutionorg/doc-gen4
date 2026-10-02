@@ -14,8 +14,10 @@ lean_exe «doc-gen4» {
 require MD4Lean from git
   "https://github.com/acmepjz/md4lean" @ "main"
 
+-- timaeus fork: dupuisf/BibtexQuery#58 (cite keys as BibTeX reads them, non-ASCII included; a
+-- malformed entry is an error rather than a silent end of file) until it is merged upstream.
 require BibtexQuery from git
-  "https://github.com/dupuisf/BibtexQuery" @ "master"
+  "https://github.com/resolutionorg/BibtexQuery" @ "bibtex-lexical-grammar"
 
 require «UnicodeBasic» from git
   "https://github.com/fgdorais/lean4-unicode-basic" @ "main"

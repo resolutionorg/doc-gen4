@@ -21,7 +21,8 @@ toolchain.
 ## What the fork changes
 
 Three env-var-gated link behaviours, a gzip option for the atlas header index, an
-`ingest` command, a few link-hygiene fixes, and the dependency atlas. See `Main.lean`, `DocGen4/Output.lean`,
+`ingest` command, a few link-hygiene fixes, two bibliography changes, and the dependency
+atlas. See `Main.lean`, `DocGen4/Output.lean`,
 `DocGen4/Output/Base.lean`, `DocGen4/DB.lean`, and for the atlas
 `DocGen4/Process/DepGraph.lean`, `DocGen4/Output/DepGraph.lean` and `static/`.
 With none of the env vars set, the emitted pages and links are those of upstream,
@@ -80,6 +81,24 @@ them to the SQLite database `DB`. Each module's source link is derived from
 `https://github.com/OWNER/REPO/blob/main/`), so all of a project's modules can be
 added to a fresh database in one call, where upstream's `single` command handles
 one module per environment load.
+
+### Bibliography: BibTeX cite keys as BibTeX reads them, and a `shorthand` label
+
+Upstream's BibTeX reader, BibtexQuery, accepted only cite keys of ASCII letters,
+digits, `:`, `_` and `-`, and silently dropped the rest of the file from the
+first entry with another key (`Wło05`). The fork pins
+[dupuisf/BibtexQuery#58](https://github.com/dupuisf/BibtexQuery/pull/58) (from
+`resolutionorg/BibtexQuery`, branch `bibtex-lexical-grammar`) until it is merged
+upstream: a key is anything up to whitespace, a comma or the closing delimiter,
+as BibTeX itself reads it, and a malformed entry is a parse error.
+
+The label an entry is listed and cited under is BibtexQuery's author-year tag
+(`[Kol07]`), which strips diacritics (`[Wlo05]` for Włodarczyk) as BibTeX's
+`alpha` style does. An entry's `shorthand` field, when present, replaces it, as
+in biblatex: `shorthand = {Wło05}` lists the entry as `[Wło05]`, so a bibliography
+whose docstrings cite by key can label by key. `DocGen4/Output/Bibtex.lean`,
+`withShorthand`; the duplicate-label suffixes (`[Kol07a]`) are applied afterwards
+as before.
 
 ### Link hygiene in trimmed output
 
