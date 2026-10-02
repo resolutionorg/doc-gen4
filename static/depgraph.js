@@ -229,8 +229,8 @@ export class HeaderIndex {
   }
 
   /**
-   * header-data.bmp is minified JSON that compresses ~20x; for large seabeds it
-   * exceeds hosting per-file size limits, so tide-docs ships a gzipped
+   * header-data.bmp is minified JSON that compresses ~20x; for large projects it
+   * exceeds hosting per-file size limits, so the site build ships a gzipped
    * `header-data.bmp.gz` (decompressed here). Fall back to the plain file for raw
    * doc-gen4 builds that don't post-process.
    */
