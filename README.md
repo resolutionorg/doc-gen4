@@ -1,19 +1,20 @@
 # `doc-gen4` (Timaeus fork)
 Document Generator for Lean 4
 
-> **This is Timaeus's internal fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.33.1` (upstream commit `e2af49a`; originally forked at `v4.29.0`).**
-> It adds three env-gated features so a Mathlib-importing project can publish
-> docs for its own modules only, resolving references to Mathlib/core against
-> the hosted Mathlib docs (no local Mathlib database). With none of the env vars
-> set, behaviour is identical to upstream.
-> To pull upstream changes: `git fetch upstream && git rebase v4.<x>.<y>`.
+> **This is a fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.33.1` (upstream commit `e2af49a`; originally forked at `v4.29.0`).**
+> It lets a Mathlib-importing project publish documentation for its own modules
+> only, with references to Mathlib and core linked out to the hosted Mathlib
+> documentation (no local Mathlib database), and it adds declaration-level
+> dependency views to the generated pages.
+> Branches are named `timaeus/v4.<x>.<y>` after the upstream tag they are based on;
+> use the branch matching your project's Lean toolchain.
 
-## Timaeus changes
+## Changes relative to upstream
 
-See [`TIMAEUS.md`](TIMAEUS.md) for the full rationale and deployment design; the
-build/publish orchestration lives in the `tide-docs` skill in the SRI repo. In brief:
+See [`TIMAEUS.md`](TIMAEUS.md) for the design, the rationale, the known
+limitations and a complete build recipe. In brief:
 
-- **`DOCGEN_LOCAL_ROOTS`** (comma-separated module roots, e.g. `Laplace,Common`) —
+- **`DOCGEN_LOCAL_ROOTS`** (comma-separated module roots, e.g. `MyProject,MyProjectExamples`) —
   `fromDb` emits HTML **and** the search index only for modules whose root is in
   this allowlist. The full DB linking context is still loaded, so cross-references
   resolve. This trims a Mathlib downstream from hundreds of thousands of files
@@ -29,11 +30,23 @@ build/publish orchestration lives in the `tide-docs` skill in the SRI repo. In b
   there is no Mathlib in any database. (`DocGen4/Output/Base.lean`, `DocGen4/Output.lean`)
 - **`ingest` command** — adds many modules to a database in a single environment
   load (one `importModules`), each with its own source URL derived from
-  `--source-base`. Used to ingest a repo's own modules into a fresh database.
+  `--source-base`. Used to ingest a project's own modules into a fresh database.
   (`Main.lean`, `DocGen4/DB.lean`)
+- **Dependency atlas** — every declaration page gets `deps` (statement closure)
+  and `used by` (dependents) panels, and the site gets an `atlas.html` page with
+  whole-library views. The data is extracted during analysis and written to
+  `declarations/depgraph.json` and `declarations/header-data.bmp`;
+  `DOCGEN_DEPGRAPH=0` skips the extraction. (`DocGen4/Process/DepGraph.lean`,
+  `DocGen4/Output/DepGraph.lean`, `static/`)
 
-See `TIMAEUS.md` for the design, the no-base-DB rationale, and the Mathlib
-version-skew drawback + graceful fallback.
+With none of the three `DOCGEN_*` link variables set, the emitted pages and
+links are those of upstream, with two exceptions: the dependency atlas is
+added, and a few references that upstream would emit as dead links (such as
+abbreviated `Path/To/Module.lean` mentions in docstrings) render as plain
+text (see "Link hygiene" in `TIMAEUS.md`).
+To move to a new upstream release: `git fetch upstream --tags`, create
+`timaeus/v4.<x>.<y>` from the tag `v4.<x>.<y>`, and merge the previous fork
+branch into it.
 
 ## Usage
 `doc-gen4` is easiest to use via its custom Lake facet. The currently recommended setup for
