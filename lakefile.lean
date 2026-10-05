@@ -404,7 +404,7 @@ def generateHtmlDocs (markerName : String) (rootMods : Array Module) (descriptio
             | .ok (manifestDeps : Array System.FilePath) =>
               return #[dataFile] ++ staticFiles ++ manifestDeps.map (buildDir / ·)
 
-/-! timaeus fork: upstream's `docs` facets, which document the whole import closure (core and
+/-! resolution fork: upstream's `docs` facets, which document the whole import closure (core and
 Mathlib included), are kept under the name `fullDocs`. The fork's `docs` facets below emit the
 trimmed site. -/
 
@@ -428,14 +428,14 @@ package_facet fullDocs (pkg) : Array FilePath := do
   let rootMods := libs.flatMap (·.rootModules)
   generateHtmlDocs s!"{pkg.baseName}--package" rootMods s!"Generating documentation for {pkg.baseName} ({rootMods.size} root modules)"
 
-/-! ## The trimmed site (timaeus fork)
+/-! ## The trimmed site (resolution fork)
 
 `lake build MyLib:docs` documents the modules in the import closure of `MyLib`'s roots whose
-top-level name is in `DOCGEN_LOCAL_ROOTS` (default: the roots' own top-level names), and links
+top-level name is in `DOCGEN_LOCAL_MODULE_ROOTS` (default: the roots' own top-level names), and links
 every reference to a module or declaration outside them to an already-hosted site (see
-TIMAEUS.md). It runs the fork's `ingest` once per source library over those modules, in one
+RESOLUTION_FORK.md). It runs the fork's `ingest` once per source library over those modules, in one
 environment load each, into the shared database, then `fromDb` over all of them. Core is not
-documented. The configuration is the environment of the `lake build`: `DOCGEN_LOCAL_ROOTS`,
+documented. The configuration is the environment of the `lake build`: `DOCGEN_LOCAL_MODULE_ROOTS`,
 `DOCGEN_EXTERNAL_BASE`, `DOCGEN_EXTERNAL_DECL_DATA`, `DOCGEN_GZIP_HEADER_DATA`,
 `DOCGEN_DEPGRAPH` and `DISABLE_EQUATIONS`; each is part of the build trace, so changing one
 rebuilds. Source links come from the `srcUri` facets (`DOCGEN_SRC`), as upstream. The
@@ -445,7 +445,7 @@ Every run of the facet re-emits its modules; as upstream, the database and the p
 declaration data accumulate across runs and `fromDb` merges what earlier runs emitted into the
 search index, so `lake build A:docs B:docs` documents several libraries in one site. -/
 
-/-- The environment variables, besides `DOCGEN_LOCAL_ROOTS`, that shape the emitted site. -/
+/-- The environment variables, besides `DOCGEN_LOCAL_MODULE_ROOTS`, that shape the emitted site. -/
 private def siteEnvVars : Array String :=
   #["DOCGEN_EXTERNAL_BASE", "DOCGEN_EXTERNAL_DECL_DATA", "DOCGEN_GZIP_HEADER_DATA",
     "DOCGEN_DEPGRAPH", "DISABLE_EQUATIONS"]
@@ -482,7 +482,7 @@ def generateTrimmedDocs (markerName : String) (rootMods : Array Module) (descrip
   let dataFile := basePath / "declarations" / "declaration-data.bmp"
   let markerFile := buildDir / "doc-data" / s!"{markerName}.docs_built"
   let manifestFile := buildDir / "doc-manifest.json"
-  let localRoots ← match ← IO.getEnv "DOCGEN_LOCAL_ROOTS" with
+  let localRoots ← match ← IO.getEnv "DOCGEN_LOCAL_MODULE_ROOTS" with
     | some value => pure value
     | none => pure (",".intercalate (rootMods.map (·.name.getRoot.toString)).toList.eraseDups)
   let localRootNames := (localRoots.splitOn ",").toArray.filterMap fun x =>
@@ -490,7 +490,7 @@ def generateTrimmedDocs (markerName : String) (rootMods : Array Module) (descrip
     if x.isEmpty then none else some x.toName
   let mods ← localClosure rootMods localRootNames
   if mods.isEmpty then
-    error s!"no module of the import closure of {rootMods.map (·.name)} has a root in DOCGEN_LOCAL_ROOTS={localRoots}"
+    error s!"no module of the import closure of {rootMods.map (·.name)} has a root in DOCGEN_LOCAL_MODULE_ROOTS={localRoots}"
   -- The modules by source library, for their source links, and their artifacts, which
   -- `ingest` reads.
   let mut groups : Array (LeanLib × Array Module) := #[]
@@ -508,13 +508,13 @@ def generateTrimmedDocs (markerName : String) (rootMods : Array Module) (descrip
           -- The configuration that shapes the site, so that a change rebuilds it.
           for name in siteEnvVars do
             addTrace <| BuildTrace.ofHash (.ofString s!"{name}={(← IO.getEnv name).getD ""}")
-          addTrace <| BuildTrace.ofHash (.ofString s!"DOCGEN_LOCAL_ROOTS={localRoots}")
+          addTrace <| BuildTrace.ofHash (.ofString s!"DOCGEN_LOCAL_MODULE_ROOTS={localRoots}")
           if let some file ← IO.getEnv "DOCGEN_EXTERNAL_DECL_DATA" then
             addTrace <| ← computeTrace (FilePath.mk file)
           addTrace <| BuildTrace.ofHash (.ofString (",".intercalate (mods.map (·.name.toString)).toList))
           buildFileUnlessUpToDate' markerFile do
             logInfo description
-            let env := (← getAugmentedEnv).push ("DOCGEN_LOCAL_ROOTS", some localRoots)
+            let env := (← getAugmentedEnv).push ("DOCGEN_LOCAL_MODULE_ROOTS", some localRoots)
             for ((_, libMods), uri) in groups.zip uris do
               proc {
                 cmd := exeFile.toString

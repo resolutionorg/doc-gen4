@@ -94,7 +94,7 @@ structure AnalyzerResult where
   -/
   containedNames : Std.HashMap Name (Std.HashSet Name) := {}
   /--
-  timaeus fork: collapsed dependency records per module, for the dep atlas.
+  resolution fork: collapsed dependency records per module, for the dep atlas.
   Only populated during analysis (`process`); empty when read back from the
   database (the `fromDb` command reads the dep tables directly).
   -/
@@ -225,7 +225,7 @@ def process (task : AnalyzeTask) : MetaM AnalyzerResult := do
   for (moduleName, module) in res.toArray do
     res := res.insert moduleName {module with members := module.members.qsort ModuleMember.order}
 
-  -- timaeus fork: collapsed dependency extraction for the dep atlas. One shared
+  -- resolution fork: collapsed dependency extraction for the dep atlas. One shared
   -- memo across all modules; failures are contained per declaration, so one bad
   -- declaration costs its own entry, not the whole graph. Skipped for the
   -- prefix task (`genCore`) — extracting dependencies for all of Init/Std/Lean

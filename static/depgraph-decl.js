@@ -1,5 +1,5 @@
 /**
- * timaeus fork: inline dep-atlas panels on declaration pages.
+ * resolution fork: inline dep-atlas panels on declaration pages.
  *
  * Every rendered declaration gets two mutually exclusive toggles next to its
  * source link:

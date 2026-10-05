@@ -67,7 +67,7 @@ def fieldToHtml (structName : Name) (f : Process.FieldInfo) : HtmlM Html := do
     -- source code range of the structure (the structure elaborator associates them with the entry
     -- in the `extends` clause).
     let projName := structName ++ getShort' f.name
-    -- timaeus fork: the inherited field's projection may live outside the database (e.g. in
+    -- resolution fork: the inherited field's projection may live outside the database (e.g. in
     -- Mathlib, for trimmed output); resolve it through the external address book, else no link.
     let fieldLink? : Option String ←
       if (← getResult).name2ModIdx.contains f.name then
