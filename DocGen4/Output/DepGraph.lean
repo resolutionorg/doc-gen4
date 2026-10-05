@@ -1,5 +1,5 @@
 /-
-timaeus fork: dep atlas output — `declarations/depgraph.json` plus the
+resolution fork: dep atlas output — `declarations/depgraph.json` plus the
 `atlas.html` page shell. The graph views themselves are client-side
 (`static/depgraph.js`, `static/depgraph-decl.js`, `static/atlas.js`).
 -/
@@ -20,7 +20,7 @@ Emit `declarations/depgraph.json`: the collapsed declaration-level dependency
 graph over the emitted (local) modules.
 
 Nodes are the declarations that appear both in the emitted modules
-(`jsonModules`, already trimmed to `DOCGEN_LOCAL_ROOTS`) and in the DB's
+(`jsonModules`, already trimmed to `DOCGEN_LOCAL_MODULE_ROOTS`) and in the DB's
 `dep_nodes` table. Edge targets that are not nodes are external: their doc
 links are resolved through the same address book used for HTML links, so the
 frontier of a statement closure points at the hosted Mathlib docs. External
@@ -67,7 +67,7 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
 
   -- Node index: emitted declarations that have a dependency record. The
   -- modules array holds only modules owning at least one node — upstream
-  -- (no DOCGEN_LOCAL_ROOTS) runs include all of core in `jsonModules`, and
+  -- (no DOCGEN_LOCAL_MODULE_ROOTS) runs include all of core in `jsonModules`, and
   -- listing thousands of node-less modules would bloat the JSON and the
   -- module-level atlas views.
   --
@@ -94,7 +94,7 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
             if emittedModules.contains m then m else module.name
           | none => module.name
         if owner != module.name then
-          IO.println s!"timaeus: dep atlas: duplicate declaration name {decl.info.name} (attributed to {owner}, also on {module.name})"
+          IO.println s!"resolution: dep atlas: duplicate declaration name {decl.info.name} (attributed to {owner}, also on {module.name})"
         let m ← match moduleIdx[owner]? with
           | some m => pure m
           | none =>
@@ -148,7 +148,7 @@ def depGraphOutput (baseConfig : SiteBaseContext) (dbPath : System.FilePath)
   let declarationDir := basePath baseConfig.buildDir / "declarations"
   IO.FS.createDirAll declarationDir
   IO.FS.writeFile (declarationDir / "depgraph.json") json.compress
-  IO.println s!"timaeus: dep atlas: {nodesJson.size} nodes, {externals.size} external refs"
+  IO.println s!"resolution: dep atlas: {nodesJson.size} nodes, {externals.size} external refs"
 
 /-- The dependency atlas page. All content is rendered by `atlas.js` from
 `declarations/depgraph.json`. -/

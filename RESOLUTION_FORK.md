@@ -1,7 +1,7 @@
-# doc-gen4 (Timaeus fork)
+# doc-gen4 (Resolution fork)
 
 Fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4) at tag
-`v4.33.1` with two additions:
+`v4.33.1` with these changes:
 
 * **Trimmed sites.** A project on Mathlib documents its own modules only;
   references to Mathlib and core link out to the hosted `mathlib4_docs`.
@@ -10,9 +10,14 @@ Fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4) at tag
   is the same idea.
 * **Dependency atlas.** Declaration-level dependency views on every page and an
   `atlas.html` overview.
-* **Non-incremental builds** this fork doesn't support building the doc incrmentally. It's faster for clean builds.
+* **`docs` is the trimmed build.** `lake build MyLib:docs` emits the trimmed
+  site; upstream's `docs` facets, which document the whole import closure, are
+  renamed `fullDocs`.
+* **Non-incremental builds.** A library's modules are ingested in one
+  environment load and re-emitted together; upstream's per-module
+  incrementality is given up for faster clean builds.
 
-Branches are named `timaeus/v4.<x>.<y>` after the upstream tag they are based
+Branches are named `resolution/v4.<x>.<y>` after the upstream tag they are based
 on. Require the branch, or a commit on it, matching the project's toolchain.
 
 ## Usage
@@ -27,7 +32,7 @@ You then need to download `declaration-data.bmp`, the search index every doc-gen
 ```sh
 curl -sL -o decl-data.bmp \
   https://leanprover-community.github.io/mathlib4_docs/declarations/declaration-data.bmp
-DOCGEN_LOCAL_ROOTS=MyProject,MyProjectExamples \
+DOCGEN_LOCAL_MODULE_ROOTS=MyProject,MyProjectExamples \
 DOCGEN_EXTERNAL_BASE=https://leanprover-community.github.io/mathlib4_docs/ \
 DOCGEN_EXTERNAL_DECL_DATA="$PWD/decl-data.bmp" \
 DOCGEN_GZIP_HEADER_DATA=1 \
@@ -40,7 +45,7 @@ The fork adds the following variables.
 
 | Variable | Effect |
 |---|---|
-| `DOCGEN_LOCAL_ROOTS` | Top-level module names that are the site's own, comma-separated. Default: the library's roots. Set it when several libraries share a site. An imported module that is neither local nor on the hosted site is named without a link. |
+| `DOCGEN_LOCAL_MODULE_ROOTS` | Top-level module names that are the site's own, comma-separated. Default: the library's roots. Set it when several libraries share a site. An imported module that is neither local nor on the hosted site is named without a link. |
 | `DOCGEN_EXTERNAL_BASE` | Hosted site that links to other modules and declarations point at. Unset: no redirection. |
 | `DOCGEN_EXTERNAL_DECL_DATA` | That site's `declaration-data.bmp`, for declaration links. Unset: external declarations are plain text. |
 | `DOCGEN_GZIP_HEADER_DATA` | Ship `declarations/header-data.bmp.gz` instead of the plain file, which can exceed hosts' file limits. |
@@ -50,7 +55,7 @@ The fork adds the following variables.
 
 **Facets.** `MyLib:docs` is overridden: it collects the import closure of the
 library's roots, keeps the modules whose top-level name is in
-`DOCGEN_LOCAL_ROOTS`, and runs `ingest` over them (one environment load per
+`DOCGEN_LOCAL_MODULE_ROOTS`, and runs `ingest` over them (one environment load per
 source library, source links from the `srcUri` facets) into the shared
 database, then `fromDb`. Core is not documented. Upstream's facets are kept as
 `fullDocs`. (`lakefile.lean`)
@@ -93,10 +98,14 @@ edges, after Lean Atlas (arXiv:2604.16347). Extraction adds to `ingest` time in
 proportion to proof-term size, up to about double. (`DocGen4/Process/DepGraph.lean`,
 `DocGen4/Output/DepGraph.lean`)
 
-## Development
+## Development Notes
 
-* `static/` is embedded with `include_str`, which Lake does not track: after
-  editing it, `find .lake/build -name "Base.*" -path "*Output*" -delete` before
+* The JavaScript and CSS in `static/` are compiled into the binary:
+  `DocGen4/Output/Base.lean` reads them at compile time with `include_str`,
+  and `fromDb` writes the strings out. Lake does not know a module depends on
+  files a macro reads, so after editing `static/` it would not recompile
+  `Base.lean` and the site would get the old assets. Force it:
+  `find .lake/build -name "Base.*" -path "*Output*" -delete` before
   `lake build doc-gen4`, or `lake clean`.
 * The database and emitted pages accumulate in the build directory across
   runs, as upstream; `lake clean` in `docbuild/` starts over.

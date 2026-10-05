@@ -1,4 +1,4 @@
-# `doc-gen4` (Timaeus fork)
+# `doc-gen4` (Resolution fork)
 Document Generator for Lean 4
 
 > **This is a fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.33.1` (upstream commit `e2af49a`; originally forked at `v4.29.0`).**
@@ -6,21 +6,21 @@ Document Generator for Lean 4
 > only, with references to Mathlib and core linked out to the hosted Mathlib
 > documentation (no local Mathlib database), and it adds declaration-level
 > dependency views to the generated pages.
-> Branches are named `timaeus/v4.<x>.<y>` after the upstream tag they are based on;
+> Branches are named `resolution/v4.<x>.<y>` after the upstream tag they are based on;
 > use the branch matching your project's Lean toolchain.
 
 ## Changes relative to upstream
 
-See [`TIMAEUS.md`](TIMAEUS.md) for the design, the rationale, the known
+See [`RESOLUTION_FORK.md`](RESOLUTION_FORK.md) for the design, the rationale, the known
 limitations and a complete build recipe. In brief:
 
-- **`DOCGEN_LOCAL_ROOTS`** (comma-separated module roots, e.g. `MyProject,MyProjectExamples`) —
+- **`DOCGEN_LOCAL_MODULE_ROOTS`** (comma-separated module roots, e.g. `MyProject,MyProjectExamples`) —
   `fromDb` emits HTML **and** the search index only for modules whose root is in
   this allowlist. The full DB linking context is still loaded, so cross-references
   resolve. This trims a Mathlib downstream from hundreds of thousands of files
   down to just the project's own modules. (`Main.lean`, `DocGen4/Output.lean`)
 - **`DOCGEN_EXTERNAL_BASE`** (e.g. `https://leanprover-community.github.io/mathlib4_docs/`) —
-  `moduleNameToLink` redirects links for modules outside `DOCGEN_LOCAL_ROOTS` to
+  `moduleNameToLink` redirects links for modules outside `DOCGEN_LOCAL_MODULE_ROOTS` to
   this base instead of a local relative path, keeping Mathlib/core references
   clickable against the already-hosted docs. (`DocGen4/Output/Base.lean`)
 - **`DOCGEN_EXTERNAL_DECL_DATA`** (path to a hosted `declaration-data.bmp`, as downloaded) — a declaration
@@ -48,9 +48,9 @@ With none of the three `DOCGEN_*` link variables set, the emitted pages and
 links are those of upstream, with two exceptions: the dependency atlas is
 added, and a few references that upstream would emit as dead links (such as
 abbreviated `Path/To/Module.lean` mentions in docstrings) render as plain
-text (see "Links" in `TIMAEUS.md`).
+text (see "Links" in `RESOLUTION_FORK.md`).
 To move to a new upstream release: `git fetch upstream --tags`, create
-`timaeus/v4.<x>.<y>` from the tag `v4.<x>.<y>`, and merge the previous fork
+`resolution/v4.<x>.<y>` from the tag `v4.<x>.<y>`, and merge the previous fork
 branch into it.
 
 ## Usage

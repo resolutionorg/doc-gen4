@@ -65,7 +65,7 @@ def docInfoHeader (doc : DocInfo) : HtmlM Html := do
 The main entry point for rendering a single declaration inside a given module.
 -/
 def docInfoToHtml (module : Name) (doc : DocInfo) : HtmlM Html := do
-  -- timaeus fork: mount point that depgraph-decl.js fills with the deps /
+  -- resolution fork: mount point that depgraph-decl.js fills with the deps /
   -- used-by toggles; emitting it server-side keeps the JS independent of the
   -- surrounding page structure. Empty (invisible) without JS.
   let depgraphToggleMount :=

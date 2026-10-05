@@ -23,7 +23,7 @@ def runSingleCmd (p : Parsed) : IO UInt32 := do
   return 0
 
 /--
-timaeus fork: ingest MANY modules into a DB in a single environment load (one
+resolution fork: ingest MANY modules into a DB in a single environment load (one
 `importModules`, then analyze each listed module). Used to populate a fresh
 database with a repo's own modules; each module's GitHub blob URL is derived
 from `--source-base`.
@@ -111,7 +111,7 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
       pure linkCtx.moduleNames
     else
       db.getTransitiveImports moduleRoots
-  -- timaeus fork: when DOCGEN_LOCAL_ROOTS is set, emit HTML (and search index
+  -- resolution fork: when DOCGEN_LOCAL_MODULE_ROOTS is set, emit HTML (and search index
   -- entries) only for modules whose top-level root is in the allowlist -- this
   -- trims a Mathlib-importing project's docs to just its own modules. Links to
   -- non-local modules and declarations are redirected out (see moduleNameToLink
@@ -121,7 +121,7 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
     if localRoots.isEmpty then pure targetModulesAll
     else
       let kept := targetModulesAll.filter (fun m => localRoots.contains m.getRoot)
-      IO.println s!"timaeus: emitting {kept.size}/{targetModulesAll.size} modules (roots: {localRoots})"
+      IO.println s!"resolution: emitting {kept.size}/{targetModulesAll.size} modules (roots: {localRoots})"
       pure kept
 
   let baseConfig ← getSimpleBaseContext buildDir (Hierarchy.fromArray targetModules)
@@ -148,7 +148,7 @@ def runFromDbCmd (p : Parsed) : IO UInt32 := do
   -- Generate the search index (declaration-data.bmp)
   htmlOutputIndex baseConfig jsonModules allTactics
 
-  -- timaeus fork: emit the dep atlas graph, and the header index that the
+  -- resolution fork: emit the dep atlas graph, and the header index that the
   -- statement-closure panels render declaration signatures from. Each is
   -- best-effort and independent: the views degrade to "data unavailable" in
   -- the browser, so emission must never fail a docs build (e.g. a database
@@ -206,7 +206,7 @@ def singleCmd := `[Cli|
 
 def ingestCmd := `[Cli|
   ingest VIA runIngestCmd;
-  "Ingest many modules into an existing DB in one environment load (timaeus fork)."
+  "Ingest many modules into an existing DB in one environment load (resolution fork)."
 
   FLAGS:
     b, build : String; "Build directory."

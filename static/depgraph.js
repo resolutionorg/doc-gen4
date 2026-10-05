@@ -1,5 +1,5 @@
 /**
- * timaeus fork: core library for the dep atlas.
+ * resolution fork: core library for the dep atlas.
  *
  * Loads `declarations/depgraph.json` (see `DocGen4.Output.depGraphOutput` for
  * the format) and provides graph operations over two edge relations:

@@ -85,7 +85,7 @@ structure WriteDB where
   saveInternalName (name : Lean.Name) (targetModule : String) (targetPosition : Int64) : IO Unit
   /-- Save a tactic defined in this module -/
   saveTactic (modName : String) (tactic : Process.TacticInfo Process.MarkdownDocstring) : IO Unit
-  /-- timaeus fork: save one declaration's collapsed dependency record -/
+  /-- resolution fork: save one declaration's collapsed dependency record -/
   saveDepEntry (modName : String) (entry : Process.DepEntry) : IO Unit
 
 def WriteDB.saveDocstring (db : WriteDB) (modName : String) (position : Int64) (text : String ⊕ (Lean.VersoDocString × String)) : IO Unit :=
@@ -521,7 +521,7 @@ end DB
 open DB
 
 
--- timaeus fork: `sourceBase?`, when set, is a GitHub blob base URL from which a
+-- resolution fork: `sourceBase?`, when set, is a GitHub blob base URL from which a
 -- per-module source URL is derived (used by the `ingest` command to add many
 -- modules in one env load, each with its own URL). It takes precedence over the
 -- single `sourceUrl?`.
@@ -629,7 +629,7 @@ def updateModuleDb (values : DocstringValues)
           -- Save tactics defined in this module
           for tactic in modInfo.tactics do
             db.saveTactic modNameStr tactic
-          -- timaeus fork: save collapsed dependency records for the dep atlas
+          -- resolution fork: save collapsed dependency records for the dep atlas
           if let some entries := doc.deps[modName]? then
             for entry in entries do
               db.saveDepEntry modNameStr entry
@@ -686,7 +686,7 @@ where
       db.saveStructureField modName pos fieldSeq projName field.type field.isDirect
       -- Save projection function name to internal_names so it can be linked
       -- (projection functions like _private.*.field link to their parent structure).
-      -- timaeus fork: direct fields only. An inherited field's projection belongs to the parent's
+      -- resolution fork: direct fields only. An inherited field's projection belongs to the parent's
       -- module; in a trimmed database without that module it must fall through to the external
       -- address book instead of linking to this structure, whose page has no anchor for it.
       if field.isDirect then
