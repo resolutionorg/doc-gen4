@@ -73,13 +73,25 @@ def getDb (dbFile : System.FilePath) : IO SQLite := do
   -- practice, timeouts of up to a minute caused intermittent problems when building Mathlib docs on
   -- a fast multicore machine, so 30 is very conservative.
   let db ← SQLite.openWith dbFile .readWriteCreate (busyTimeoutMs := 1800000)  -- 30 minutes
-  db.exec "PRAGMA journal_mode = WAL"
-  db.exec "PRAGMA foreign_keys = ON"
-  try
-    db.transaction (db.exec ddl)
-  catch
-  | e =>
-    throw <| .userError s!"Exception while creating schema: {e}"
+  -- Processes may create the database at the same time (library facets building in parallel).
+  -- Switching a fresh database to WAL and creating the schema can then fail at once with
+  -- "database is locked" where the busy handler does not apply, so both are retried briefly;
+  -- the schema is created in an immediate transaction, which does wait through the busy handler.
+  let setup : IO Unit := do
+    db.exec "PRAGMA journal_mode = WAL"
+    db.exec "PRAGMA foreign_keys = ON"
+    db.transaction (mode := .immediate) (db.exec ddl)
+  let mut attempts := 0
+  repeat
+    attempts := attempts + 1
+    let outcome ← try setup; pure none catch e => pure (some e)
+    match outcome with
+    | none => break
+    | some e =>
+      if attempts < 100 && (toString e).startsWith "database is locked" then
+        IO.sleep 100
+      else
+        throw <| IO.userError s!"Exception while creating schema: {e}"
   -- Check schema version via DDL hash and type definition hash
   let ddlHash := toString ddl.hash
   let typeHash := toString serializedCodeTypeDefs.hash
@@ -93,21 +105,21 @@ def getDb (dbFile : System.FilePath) : IO SQLite := do
     if key == "type_hash" then storedTypeHash := some value
   match storedDdlHash, storedTypeHash with
   | none, none =>
-    -- New database, store the hashes
-    db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
-    db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
+    -- New database, store the hashes (OR IGNORE: another process may have stored them meanwhile)
+    db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
+    db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
   | some stored, _ =>
     if stored != ddlHash then
       throw <| .userError s!"Database schema is outdated (DDL hash mismatch). Run `lake clean` or delete '{dbFile}' and rebuild."
     match storedTypeHash with
     | none =>
       -- Older DB without type hash, add it
-      db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
+      db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
     | some storedType =>
       if storedType != typeHash then
         throw <| .userError s!"Database schema is outdated (serialized type definitions changed). Run `lake clean` or delete '{dbFile}' and rebuild."
   | none, some _ => -- Shouldn't happen, but handle gracefully
-    db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
+    db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
   return db
 where
   ddl :=
