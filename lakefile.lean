@@ -472,10 +472,30 @@ private def localClosure (roots : Array Module) (localRoots : Array Lean.Name) :
         stack := imp :: stack
   return found.qsort (·.name.toString < ·.name.toString)
 
+/-- The database with its schema, created once per build before any `ingest`: as upstream's
+`coreDocs` does for `single`, so that library facets building in parallel do not create it at the
+same time. -/
+target dbInit : FilePath := do
+  let exeJob ← «doc-gen4».fetch
+  let buildDir := (← getRootPackage).buildDir
+  let dbPath := buildDir / "api-docs.db"
+  let markerFile := buildDir / "doc-data" / "db-init.marker"
+  exeJob.mapM fun exeFile => do
+    buildFileUnlessUpToDate' markerFile do
+      proc {
+        cmd := exeFile.toString
+        args := #["initDb", "--build", buildDir.toString, dbPath.toString]
+        env := ← getAugmentedEnv
+      }
+      createParentDirs markerFile
+      IO.FS.writeFile markerFile ""
+    return dbPath
+
 def generateTrimmedDocs (markerName : String) (rootMods : Array Module) (description : String) :
     FetchM (Job (Array FilePath)) := do
   let exeJob ← «doc-gen4».fetch
   let bibPrepassJob ← bibPrepass.fetch
+  let dbInitJob ← dbInit.fetch
   let buildDir := (← getRootPackage).buildDir
   let basePath := buildDir / "doc"
   let dbPath := buildDir / "api-docs.db"
@@ -504,6 +524,7 @@ def generateTrimmedDocs (markerName : String) (rootMods : Array Module) (descrip
   artsJob.bindM fun _ => do
     urisJob.bindM fun uris => do
       bibPrepassJob.bindM fun _ => do
+       dbInitJob.bindM fun _ => do
         exeJob.mapM fun exeFile => do
           -- The configuration that shapes the site, so that a change rebuilds it.
           for name in siteEnvVars do
