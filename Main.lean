@@ -39,6 +39,18 @@ def runIngestCmd (p : Parsed) : IO UInt32 := do
   updateModuleDb builtinDocstringValues doc buildDir dbFile none (sourceBase? := sourceBase)
   return 0
 
+/-- resolution fork: create the database and its schema, and nothing else. The `dbInit` Lake
+target runs it before any `ingest`, as upstream's `genCore` does for `single`, so that parallel
+library facets do not create the database at the same time. -/
+def runInitDbCmd (p : Parsed) : IO UInt32 := do
+  let buildDir := match p.flag? "build" with
+    | some dir => dir.as! String
+    | none => ".lake/build"
+  let dbFile := p.positionalArg! "db" |>.as! String
+  IO.FS.createDirAll buildDir
+  let _ ← getDb (buildDir / dbFile)
+  return 0
+
 def runGenCoreCmd (p : Parsed) : IO UInt32 := do
   let buildDir := match p.flag? "build" with
     | some dir => dir.as! String
@@ -217,6 +229,17 @@ def ingestCmd := `[Cli|
     ...modules : String; "The modules to ingest."
 ]
 
+def initDbCmd := `[Cli|
+  initDb VIA runInitDbCmd;
+  "Create the SQLite database and its schema (resolution fork)."
+
+  FLAGS:
+    b, build : String; "Build directory."
+
+  ARGS:
+    db : String; "Path to the SQLite database (relative to build dir)"
+]
+
 def genCoreCmd := `[Cli|
   genCore VIA runGenCoreCmd;
   "Populate the database with documentation for the specified Lean core module (Init, Std, Lake, Lean)."
@@ -273,6 +296,7 @@ def docGenCmd : Cmd := `[Cli|
   SUBCOMMANDS:
     singleCmd;
     ingestCmd;
+    initDbCmd;
     genCoreCmd;
     bibPrepassCmd;
     headerDataCmd;
