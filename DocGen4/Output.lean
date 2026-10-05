@@ -180,17 +180,17 @@ def htmlOutputResultsParallel (baseConfig : SiteBaseContext) (dbPath : System.Fi
     | .error e => throw e
   return (outputs, jsonModules)
 
-/-- timaeus fork: parse the comma-separated `DOCGEN_LOCAL_ROOTS` env var into
+/-- resolution fork: parse the comma-separated `DOCGEN_LOCAL_MODULE_ROOTS` env var into
 top-level module roots. Empty when the var is unset. Shared by the base-context
 setup (link redirection) and `fromDb` (output trimming). -/
 def readLocalRoots : IO (Array Name) := do
-  match ← IO.getEnv "DOCGEN_LOCAL_ROOTS" with
+  match ← IO.getEnv "DOCGEN_LOCAL_MODULE_ROOTS" with
   | none => return #[]
   | some s => return (s.splitOn ",").toArray.filterMap fun x =>
       let x := x.trimAscii.copy
       if x.isEmpty then none else some x.toName
 
-/-- timaeus fork: load the external declaration address book (name -> docLink)
+/-- resolution fork: load the external declaration address book (name -> docLink)
 from the file pointed at by `DOCGEN_EXTERNAL_DECL_DATA`: a hosted
 `declarations/declaration-data.bmp` as published (JSON whose `declarations`
 object maps each name to an object with a `docLink`), so callers pass the
@@ -233,7 +233,7 @@ def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
     | .error err =>
       throw <| IO.userError s!"Failed to parse 'references.json': {err}"
     | .ok (refs : Array BibItem) =>
-      -- timaeus fork: external-docs redirect config from the environment.
+      -- resolution fork: external-docs redirect config from the environment.
       let externalDocsBase ← IO.getEnv "DOCGEN_EXTERNAL_BASE"
       let localRoots ← readLocalRoots
       let (externalDeclData, externalModules) ← readExternalDeclData
@@ -308,7 +308,7 @@ def headerDataOutput (buildDir : System.FilePath) : IO Unit := do
   let declarationDir := basePath buildDir / "declarations"
   FS.createDirAll declarationDir
   writeFileAtomic (declarationDir / "header-data.bmp") finalHeaderJson.compress
-  -- timaeus fork: the header index is minified JSON that compresses about twentyfold, and the
+  -- resolution fork: the header index is minified JSON that compresses about twentyfold, and the
   -- plain file can exceed hosts' per-file limits (Cloudflare Pages: 25 MiB). With
   -- DOCGEN_GZIP_HEADER_DATA set it is shipped as `header-data.bmp.gz` instead, which the atlas
   -- client fetches first, falling back to the plain file.
