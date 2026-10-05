@@ -75,10 +75,8 @@ def getDb (dbFile : System.FilePath) : IO SQLite := do
   let db ← SQLite.openWith dbFile .readWriteCreate (busyTimeoutMs := 1800000)  -- 30 minutes
   db.exec "PRAGMA journal_mode = WAL"
   db.exec "PRAGMA foreign_keys = ON"
-  -- An immediate transaction: a second process creating the schema at the same time waits through
-  -- the busy handler, where a deferred transaction that reads and then writes fails at once.
   try
-    db.transaction (mode := .immediate) (db.exec ddl)
+    db.transaction (db.exec ddl)
   catch
   | e =>
     throw <| .userError s!"Exception while creating schema: {e}"
@@ -95,21 +93,21 @@ def getDb (dbFile : System.FilePath) : IO SQLite := do
     if key == "type_hash" then storedTypeHash := some value
   match storedDdlHash, storedTypeHash with
   | none, none =>
-    -- New database, store the hashes (OR IGNORE: another process may have stored them meanwhile)
-    db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
-    db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
+    -- New database, store the hashes
+    db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
+    db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
   | some stored, _ =>
     if stored != ddlHash then
       throw <| .userError s!"Database schema is outdated (DDL hash mismatch). Run `lake clean` or delete '{dbFile}' and rebuild."
     match storedTypeHash with
     | none =>
       -- Older DB without type hash, add it
-      db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
+      db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('type_hash', '{typeHash}')"
     | some storedType =>
       if storedType != typeHash then
         throw <| .userError s!"Database schema is outdated (serialized type definitions changed). Run `lake clean` or delete '{dbFile}' and rebuild."
   | none, some _ => -- Shouldn't happen, but handle gracefully
-    db.exec s!"INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
+    db.exec s!"INSERT INTO schema_meta (key, value) VALUES ('ddl_hash', '{ddlHash}')"
   return db
 where
   ddl :=
