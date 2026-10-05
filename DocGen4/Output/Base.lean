@@ -90,6 +90,12 @@ structure SiteBaseContext where
   database, so the emitted DB only needs the project's own modules.
   -/
   externalDeclData : Std.HashMap Name String := {}
+  /--
+  timaeus fork: the modules of the hosted external site, from the address book's `modules`
+  section; `none` when no address book is loaded. A non-local module absent from it (an import
+  from a library that is neither documented nor hosted) is named without a link.
+  -/
+  externalModules : Option (Std.HashSet Name) := none
 
 /--
 Declaration decorator function type: given a module name, declaration name, and declaration kind,
@@ -236,6 +242,12 @@ def moduleNameToLink (n : Name) : BaseHtmlM String := do
 Returns the HTML doc-gen4 link to a module name.
 -/
 def moduleToHtmlLink (module : Name) : BaseHtmlM Html := do
+  let ctx ← read
+  -- timaeus fork: no link to a non-local module the external site does not have.
+  if ctx.externalDocsBase.isSome && !ctx.localRoots.contains module.getRoot then
+    if let some hosted := ctx.externalModules then
+      if !hosted.contains module then
+        return Html.text module.toString
   return <a href={← moduleNameToLink module}>{module.toString}</a>
 
 /--
