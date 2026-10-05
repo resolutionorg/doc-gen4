@@ -71,25 +71,31 @@ structure SiteBaseContext where
   -/
   refs : Array BibItem
   /--
-  timaeus fork: base URL to redirect links for external (non-local) modules to,
+  resolution fork: base URL to redirect links for external (non-local) modules to,
   e.g. "https://leanprover-community.github.io/mathlib4_docs/". When `none`,
   upstream behaviour (all links relative/local) is preserved.
   -/
   externalDocsBase : Option String := none
   /--
-  timaeus fork: top-level module roots considered local (HTML is emitted for
+  resolution fork: top-level module roots considered local (HTML is emitted for
   them). Links to any module whose root is not in this set are redirected to
   `externalDocsBase`. Only consulted when `externalDocsBase` is `some`.
   -/
   localRoots : Array Name := #[]
   /--
-  timaeus fork: external declaration address book, mapping a declaration name to
+  resolution fork: external declaration address book, mapping a declaration name to
   its `docLink` (relative URL + anchor) on the hosted docs site. Populated from
   the hosted `declaration-data.bmp` (see `DOCGEN_EXTERNAL_DECL_DATA`). Lets us
   resolve references to Mathlib/core declarations that are NOT in the local
   database, so the emitted DB only needs the project's own modules.
   -/
   externalDeclData : Std.HashMap Name String := {}
+  /--
+  resolution fork: the modules of the hosted external site, from the address book's `modules`
+  section; `none` when no address book is loaded. A non-local module absent from it (an import
+  from a library that is neither documented nor hosted) is named without a link.
+  -/
+  externalModules : Option (Std.HashSet Name) := none
 
 /--
 Declaration decorator function type: given a module name, declaration name, and declaration kind,
@@ -202,12 +208,12 @@ def templateExtends {α β} {m} [Bind m] (base : α → m β) (new : m α) : m �
 
 def templateLiftExtends {α β} {m n} [Bind m] [MonadLiftT n m] (base : α → n β) (new : m α) : m β :=
   new >>= (monadLift ∘ base)
-/-- timaeus fork: join an external base URL and a relative path with one slash. -/
+/-- resolution fork: join an external base URL and a relative path with one slash. -/
 private def joinExternal (base rel : String) : String :=
   (if base.endsWith "/" then base else base ++ "/") ++ rel
 
 /--
-timaeus fork: resolve a declaration name to its link on the hosted external docs
+resolution fork: resolve a declaration name to its link on the hosted external docs
 via the `externalDeclData` address book. Returns `none` if there is no external
 base configured or the name is not in the book.
 -/
@@ -236,6 +242,12 @@ def moduleNameToLink (n : Name) : BaseHtmlM String := do
 Returns the HTML doc-gen4 link to a module name.
 -/
 def moduleToHtmlLink (module : Name) : BaseHtmlM Html := do
+  let ctx ← read
+  -- resolution fork: no link to a non-local module the external site does not have.
+  if ctx.externalDocsBase.isSome && !ctx.localRoots.contains module.getRoot then
+    if let some hosted := ctx.externalModules then
+      if !hosted.contains module then
+        return Html.text module.toString
   return <a href={← moduleNameToLink module}>{module.toString}</a>
 
 /--
@@ -265,7 +277,7 @@ are used in documentation generation, notably JS and CSS ones.
   def importedByJs : String := include_str "../../static/importedBy.js"
   def findJs : String := include_str "../../static/find/find.js"
   def mathjaxConfigJs : String := include_str "../../static/mathjax-config.js"
-  -- timaeus fork: dep atlas assets
+  -- resolution fork: dep atlas assets
   def depgraphJs : String := include_str "../../static/depgraph.js"
   def depgraphDeclJs : String := include_str "../../static/depgraph-decl.js"
   def atlasJs : String := include_str "../../static/atlas.js"
@@ -392,7 +404,7 @@ partial def renderedCodeToHtmlAux (code : RenderedCode) : HtmlM (Bool × Array H
         else
           return (true, #[<a href={link}>[innerHtml]</a>])
       else if let some link ← externalDeclLink? name then
-        -- timaeus fork: name not in the local DB, but resolved via the hosted
+        -- resolution fork: name not in the local DB, but resolved via the hosted
         -- external declaration data (Mathlib/core). See `externalDeclData`.
         if innerHasAnchor then
           return (true, innerHtml)

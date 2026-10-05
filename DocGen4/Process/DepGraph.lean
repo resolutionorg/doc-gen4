@@ -1,5 +1,5 @@
 /-
-timaeus fork: declaration-level dependency extraction for the dep atlas.
+resolution fork: declaration-level dependency extraction for the dep atlas.
 
 For every rendered declaration we record which other *human-facing* declarations
 its statement (type) and its value (body / proof) refer to. Auto-generated

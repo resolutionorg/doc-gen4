@@ -180,25 +180,26 @@ def htmlOutputResultsParallel (baseConfig : SiteBaseContext) (dbPath : System.Fi
     | .error e => throw e
   return (outputs, jsonModules)
 
-/-- timaeus fork: parse the comma-separated `DOCGEN_LOCAL_ROOTS` env var into
+/-- resolution fork: parse the comma-separated `DOCGEN_LOCAL_MODULE_ROOTS` env var into
 top-level module roots. Empty when the var is unset. Shared by the base-context
 setup (link redirection) and `fromDb` (output trimming). -/
 def readLocalRoots : IO (Array Name) := do
-  match ← IO.getEnv "DOCGEN_LOCAL_ROOTS" with
+  match ← IO.getEnv "DOCGEN_LOCAL_MODULE_ROOTS" with
   | none => return #[]
   | some s => return (s.splitOn ",").toArray.filterMap fun x =>
       let x := x.trimAscii.copy
       if x.isEmpty then none else some x.toName
 
-/-- timaeus fork: load the external declaration address book (name -> docLink)
+/-- resolution fork: load the external declaration address book (name -> docLink)
 from the file pointed at by `DOCGEN_EXTERNAL_DECL_DATA`: a hosted
 `declarations/declaration-data.bmp` as published (JSON whose `declarations`
 object maps each name to an object with a `docLink`), so callers pass the
-downloaded file unchanged. Empty when unset. A file that does not parse is a
-hard error: a site emitted without external links would look like success. -/
-def readExternalDeclData : IO (Std.HashMap Name String) := do
+downloaded file unchanged, with the site's modules (its `modules` object). Empty
+when unset. A file that does not parse is a hard error: a site emitted without
+external links would look like success. -/
+def readExternalDeclData : IO (Std.HashMap Name String × Option (Std.HashSet Name)) := do
   match ← IO.getEnv "DOCGEN_EXTERNAL_DECL_DATA" with
-  | none => return {}
+  | none => return ({}, none)
   | some path =>
     let contents ← IO.FS.readFile path
     let json ← match Json.parse contents with
@@ -209,12 +210,17 @@ def readExternalDeclData : IO (Std.HashMap Name String) := do
       | .ok o => pure o
       | .error e =>
         throw <| IO.userError s!"DOCGEN_EXTERNAL_DECL_DATA: {path} has no 'declarations' object: {e}"
-    return entries.foldl (init := {}) fun m name info =>
+    let hosted : Option (Std.HashSet Name) :=
+      match json.getObjVal? "modules" |>.bind (·.getObj?) with
+      | .ok modules => some (modules.foldl (init := {}) fun set name _ => set.insert name.toName)
+      | .error _ => none
+    let book := entries.foldl (init := {}) fun m name info =>
       match info.getObjValAs? String "docLink" with
       | .ok link =>
         if link.isEmpty then m
         else m.insert name.toName (if link.startsWith "./" then (link.drop 2).toString else link)
       | .error _ => m
+    return (book, hosted)
 
 def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
     IO SiteBaseContext := do
@@ -227,10 +233,10 @@ def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
     | .error err =>
       throw <| IO.userError s!"Failed to parse 'references.json': {err}"
     | .ok (refs : Array BibItem) =>
-      -- timaeus fork: external-docs redirect config from the environment.
+      -- resolution fork: external-docs redirect config from the environment.
       let externalDocsBase ← IO.getEnv "DOCGEN_EXTERNAL_BASE"
       let localRoots ← readLocalRoots
-      let externalDeclData ← readExternalDeclData
+      let (externalDeclData, externalModules) ← readExternalDeclData
       return {
         buildDir := buildDir
         depthToRoot := 0
@@ -240,6 +246,7 @@ def getSimpleBaseContext (buildDir : System.FilePath) (hierarchy : Hierarchy) :
         externalDocsBase := externalDocsBase
         localRoots := localRoots
         externalDeclData := externalDeclData
+        externalModules := externalModules
       }
 
 def htmlOutputIndex (baseConfig : SiteBaseContext) (modules : Array JsonModule) (tacticInfo : Array (Process.TacticInfo Html)) : IO Unit := do
@@ -301,7 +308,7 @@ def headerDataOutput (buildDir : System.FilePath) : IO Unit := do
   let declarationDir := basePath buildDir / "declarations"
   FS.createDirAll declarationDir
   FS.writeFile (declarationDir / "header-data.bmp") finalHeaderJson.compress
-  -- timaeus fork: the header index is minified JSON that compresses about twentyfold, and the
+  -- resolution fork: the header index is minified JSON that compresses about twentyfold, and the
   -- plain file can exceed hosts' per-file limits (Cloudflare Pages: 25 MiB). With
   -- DOCGEN_GZIP_HEADER_DATA set it is shipped as `header-data.bmp.gz` instead, which the atlas
   -- client fetches first, falling back to the plain file.

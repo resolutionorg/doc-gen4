@@ -1,5 +1,5 @@
 /**
- * timaeus fork: the dependency atlas page.
+ * resolution fork: the dependency atlas page.
  *
  * Three coordinated views over the same graph:
  * - core: declarations ranked by how much of the project's meaning rests on

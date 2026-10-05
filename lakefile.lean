@@ -307,8 +307,9 @@ package_facet docInfo (pkg) : FilePath := do
       return dbPath
 
 library_facet docsHeader (lib) : FilePath := do
-  -- Depend on the package docs facet to ensure HTML is generated first
-  let pkgDocsJob ← fetch <| lib.pkg.facet `docs
+  -- Depend on the package fullDocs facet to ensure HTML is generated first. The trimmed `docs`
+  -- facets emit the header data within `fromDb` and do not use this.
+  let pkgDocsJob ← fetch <| lib.pkg.facet `fullDocs
   let exeJob ← «doc-gen4».fetch
   -- Shared with DocGen4.Output
   let buildDir := (← getRootPackage).buildDir
@@ -403,21 +404,151 @@ def generateHtmlDocs (markerName : String) (rootMods : Array Module) (descriptio
             | .ok (manifestDeps : Array System.FilePath) =>
               return #[dataFile] ++ staticFiles ++ manifestDeps.map (buildDir / ·)
 
-/-- Generate HTML for this module and its transitive imports. -/
-module_facet docs (mod) : Array FilePath := do
+/-! resolution fork: upstream's `docs` facets, which document the whole import closure (core and
+Mathlib included), are kept under the name `fullDocs`. The fork's `docs` facets below emit the
+trimmed site. -/
+
+/-- Generate HTML for this module and its transitive imports (upstream's `docs`). -/
+module_facet fullDocs (mod) : Array FilePath := do
   generateHtmlDocs s!"{mod.name}--module" #[mod] s!"Generating documentation for {mod.name} and dependencies"
 
-/-- Generate HTML for all modules in this library. -/
-library_facet docs (lib) : Array FilePath := do
+/-- Generate HTML for all modules in this library and their transitive imports (upstream's `docs`). -/
+library_facet fullDocs (lib) : Array FilePath := do
   let rootMods := lib.rootModules
   generateHtmlDocs s!"{lib.name}--library" rootMods s!"Generating documentation for {lib.name} ({rootMods.size} root modules)"
 
 /--
-Generates documentation for the package's default library targets. Runs a single HTML generation
-process for all root modules across all default libraries.
+Generates documentation for the package's default library targets and their transitive imports
+(upstream's `docs`). Runs a single HTML generation process for all root modules across all default
+libraries.
 -/
-package_facet docs (pkg) : Array FilePath := do
+package_facet fullDocs (pkg) : Array FilePath := do
   let defaultTargets := pkg.defaultTargets
   let libs := pkg.leanLibs.filter fun lib => defaultTargets.contains lib.name
   let rootMods := libs.flatMap (·.rootModules)
   generateHtmlDocs s!"{pkg.baseName}--package" rootMods s!"Generating documentation for {pkg.baseName} ({rootMods.size} root modules)"
+
+/-! ## The trimmed site (resolution fork)
+
+`lake build MyLib:docs` documents the modules in the import closure of `MyLib`'s roots whose
+top-level name is in `DOCGEN_LOCAL_MODULE_ROOTS` (default: the roots' own top-level names), and links
+every reference to a module or declaration outside them to an already-hosted site (see
+RESOLUTION_FORK.md). It runs the fork's `ingest` once per source library over those modules, in one
+environment load each, into the shared database, then `fromDb` over all of them. Core is not
+documented. The configuration is the environment of the `lake build`: `DOCGEN_LOCAL_MODULE_ROOTS`,
+`DOCGEN_EXTERNAL_BASE`, `DOCGEN_EXTERNAL_DECL_DATA`, `DOCGEN_GZIP_HEADER_DATA`,
+`DOCGEN_DEPGRAPH` and `DISABLE_EQUATIONS`; each is part of the build trace, so changing one
+rebuilds. Source links come from the `srcUri` facets (`DOCGEN_SRC`), as upstream. The
+bibliography is `docs/references.bib` of the root package, as upstream.
+
+Every run of the facet re-emits its modules; as upstream, the database and the per-module
+declaration data accumulate across runs and `fromDb` merges what earlier runs emitted into the
+search index, so `lake build A:docs B:docs` documents several libraries in one site. -/
+
+/-- The environment variables, besides `DOCGEN_LOCAL_MODULE_ROOTS`, that shape the emitted site. -/
+private def siteEnvVars : Array String :=
+  #["DOCGEN_EXTERNAL_BASE", "DOCGEN_EXTERNAL_DECL_DATA", "DOCGEN_GZIP_HEADER_DATA",
+    "DOCGEN_DEPGRAPH", "DISABLE_EQUATIONS"]
+
+/-- The modules in the import closure of `roots` whose top-level name is in `localRoots`. The
+roots themselves are walked through whether local or not (an aggregator root is not), and an
+external module imports no local one, so the walk stops at external modules. -/
+private def localClosure (roots : Array Module) (localRoots : Array Lean.Name) :
+    FetchM (Array Module) := do
+  let mut seen : Std.HashSet Lean.Name := {}
+  let mut found := #[]
+  let mut stack := roots.toList
+  while h : stack ≠ [] do
+    let mod := stack.head h
+    stack := stack.tail
+    if seen.contains mod.name then
+      continue
+    seen := seen.insert mod.name
+    let isLocal := localRoots.contains mod.name.getRoot
+    if isLocal then
+      found := found.push mod
+    if isLocal || roots.any (·.name == mod.name) then
+      for imp in (← (← mod.imports.fetch).await) do
+        stack := imp :: stack
+  return found.qsort (·.name.toString < ·.name.toString)
+
+def generateTrimmedDocs (markerName : String) (rootMods : Array Module) (description : String) :
+    FetchM (Job (Array FilePath)) := do
+  let exeJob ← «doc-gen4».fetch
+  let bibPrepassJob ← bibPrepass.fetch
+  let buildDir := (← getRootPackage).buildDir
+  let basePath := buildDir / "doc"
+  let dbPath := buildDir / "api-docs.db"
+  let dataFile := basePath / "declarations" / "declaration-data.bmp"
+  let markerFile := buildDir / "doc-data" / s!"{markerName}.docs_built"
+  let manifestFile := buildDir / "doc-manifest.json"
+  let localRoots ← match ← IO.getEnv "DOCGEN_LOCAL_MODULE_ROOTS" with
+    | some value => pure value
+    | none => pure (",".intercalate (rootMods.map (·.name.getRoot.toString)).toList.eraseDups)
+  let localRootNames := (localRoots.splitOn ",").toArray.filterMap fun x =>
+    let x := x.trimAscii.copy
+    if x.isEmpty then none else some x.toName
+  let mods ← localClosure rootMods localRootNames
+  if mods.isEmpty then
+    error s!"no module of the import closure of {rootMods.map (·.name)} has a root in DOCGEN_LOCAL_MODULE_ROOTS={localRoots}"
+  -- The modules by source library, for their source links, and their artifacts, which
+  -- `ingest` reads.
+  let mut groups : Array (LeanLib × Array Module) := #[]
+  for mod in mods do
+    if let some i := groups.findIdx? (·.1.name == mod.lib.name) then
+      groups := groups.modify i fun (lib, ms) => (lib, ms.push mod)
+    else
+      groups := groups.push (mod.lib, #[mod])
+  let urisJob := Job.collectArray (← groups.mapM fun (lib, _) => fetch <| lib.facet `srcUri)
+  let artsJob := Job.mixArray (← mods.mapM (·.leanArts.fetch))
+  artsJob.bindM fun _ => do
+    urisJob.bindM fun uris => do
+      bibPrepassJob.bindM fun _ => do
+        exeJob.mapM fun exeFile => do
+          -- The configuration that shapes the site, so that a change rebuilds it.
+          for name in siteEnvVars do
+            addTrace <| BuildTrace.ofHash (.ofString s!"{name}={(← IO.getEnv name).getD ""}")
+          addTrace <| BuildTrace.ofHash (.ofString s!"DOCGEN_LOCAL_MODULE_ROOTS={localRoots}")
+          if let some file ← IO.getEnv "DOCGEN_EXTERNAL_DECL_DATA" then
+            addTrace <| ← computeTrace (FilePath.mk file)
+          addTrace <| BuildTrace.ofHash (.ofString (",".intercalate (mods.map (·.name.toString)).toList))
+          buildFileUnlessUpToDate' markerFile do
+            logInfo description
+            let env := (← getAugmentedEnv).push ("DOCGEN_LOCAL_MODULE_ROOTS", some localRoots)
+            for ((_, libMods), uri) in groups.zip uris do
+              proc {
+                cmd := exeFile.toString
+                args := #["ingest", "--build", buildDir.toString, "--source-base", uri, dbPath.toString]
+                  ++ libMods.map (·.name.toString)
+                env
+              }
+            proc {
+              cmd := exeFile.toString
+              args := #["fromDb", "--build", buildDir.toString, "--manifest", manifestFile.toString, dbPath.toString]
+                ++ mods.map (·.name.toString)
+              env
+            }
+            createParentDirs markerFile
+            IO.FS.writeFile markerFile ""
+          match Lean.Json.parse <| ← IO.FS.readFile manifestFile with
+          | .error _ => return #[dataFile]
+          | .ok manifestData =>
+            match Lean.fromJson? manifestData with
+            | .error _ => return #[dataFile]
+            | .ok (manifestDeps : Array System.FilePath) =>
+              return #[dataFile] ++ manifestDeps.map (buildDir / ·)
+
+/-- The trimmed site of the local modules in the import closure of this library's roots. -/
+library_facet docs (lib) : Array FilePath := do
+  let rootMods := lib.rootModules
+  generateTrimmedDocs s!"{lib.name}--library" rootMods
+    s!"Generating documentation for {lib.name} ({rootMods.size} root modules, trimmed to the local roots)"
+
+/-- The trimmed site of the local modules in the import closure of the package's default library
+targets' roots. -/
+package_facet docs (pkg) : Array FilePath := do
+  let defaultTargets := pkg.defaultTargets
+  let libs := pkg.leanLibs.filter fun lib => defaultTargets.contains lib.name
+  let rootMods := libs.flatMap (·.rootModules)
+  generateTrimmedDocs s!"{pkg.baseName}--package" rootMods
+    s!"Generating documentation for {pkg.baseName} ({rootMods.size} root modules, trimmed to the local roots)"
