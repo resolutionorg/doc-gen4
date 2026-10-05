@@ -329,22 +329,9 @@ library_facet docsHeader (lib) : FilePath := do
       return dataFile
 
 
-/--
-Generate HTML documentation for the given root modules.
-Fetches docInfo for all roots, ensures core docs are built, then runs a single `fromDb` process.
-Returns an array of all generated file paths.
--/
-def generateHtmlDocs (markerName : String) (rootMods : Array Module) (description : String) : FetchM (Job (Array FilePath)) := do
-  let exeJob ← «doc-gen4».fetch
-  let bibPrepassJob ← bibPrepass.fetch
-  let coreJob ← coreDocs.fetch
-  let docInfoJobs := Job.collectArray <| ← rootMods.mapM (fetch <| ·.facet `docInfo)
-  let buildDir := (← getRootPackage).buildDir
-  let basePath := buildDir / "doc"
-  let dbPath := buildDir / "api-docs.db"
-  let dataFile := basePath / "declarations" / "declaration-data.bmp"
-  let markerFile := buildDir / "doc-data" / s!"{markerName}.docs_built"
-  let staticFiles := #[
+/-- The files `fromDb` writes besides the module pages and the search index; the header index
+is `header-data.bmp.gz` when `DOCGEN_GZIP_HEADER_DATA` is set (resolution fork). -/
+def siteStaticFiles (basePath : FilePath) (gzipHeader : Bool := false) : Array FilePath := #[
     basePath / "style.css",
     basePath / "depgraph.css",
     basePath / "depgraph.js",
@@ -374,7 +361,27 @@ def generateHtmlDocs (markerName : String) (rootMods : Array Module) (descriptio
     basePath / "tactics.html",
     basePath / "find" / "index.html",
     basePath / "find" / "find.js"
-  ]
+  ] |>.map fun f =>
+    if gzipHeader && f == basePath / "declarations" / "header-data.bmp" then
+      basePath / "declarations" / "header-data.bmp.gz"
+    else f
+
+/--
+Generate HTML documentation for the given root modules.
+Fetches docInfo for all roots, ensures core docs are built, then runs a single `fromDb` process.
+Returns an array of all generated file paths.
+-/
+def generateHtmlDocs (markerName : String) (rootMods : Array Module) (description : String) : FetchM (Job (Array FilePath)) := do
+  let exeJob ← «doc-gen4».fetch
+  let bibPrepassJob ← bibPrepass.fetch
+  let coreJob ← coreDocs.fetch
+  let docInfoJobs := Job.collectArray <| ← rootMods.mapM (fetch <| ·.facet `docInfo)
+  let buildDir := (← getRootPackage).buildDir
+  let basePath := buildDir / "doc"
+  let dbPath := buildDir / "api-docs.db"
+  let dataFile := basePath / "declarations" / "declaration-data.bmp"
+  let markerFile := buildDir / "doc-data" / s!"{markerName}.docs_built"
+  let staticFiles := siteStaticFiles basePath
   let coreRoots := #[`Init, `Std, `Lake, `Lean]
   let rootNames := rootMods.map (·.name) ++ coreRoots
   let manifestFile := buildDir / "doc-manifest.json"
@@ -551,13 +558,14 @@ def generateTrimmedDocs (markerName : String) (rootMods : Array Module) (descrip
             }
             createParentDirs markerFile
             IO.FS.writeFile markerFile ""
+          let staticFiles := siteStaticFiles basePath (← IO.getEnv "DOCGEN_GZIP_HEADER_DATA").isSome
           match Lean.Json.parse <| ← IO.FS.readFile manifestFile with
-          | .error _ => return #[dataFile]
+          | .error _ => return #[dataFile] ++ staticFiles
           | .ok manifestData =>
             match Lean.fromJson? manifestData with
-            | .error _ => return #[dataFile]
+            | .error _ => return #[dataFile] ++ staticFiles
             | .ok (manifestDeps : Array System.FilePath) =>
-              return #[dataFile] ++ manifestDeps.map (buildDir / ·)
+              return #[dataFile] ++ staticFiles ++ manifestDeps.map (buildDir / ·)
 
 /-- The trimmed site of the local modules in the import closure of this library's roots. -/
 library_facet docs (lib) : Array FilePath := do
