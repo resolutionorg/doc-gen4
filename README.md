@@ -32,6 +32,11 @@ limitations and a complete build recipe. In brief:
   load (one `importModules`), each with its own source URL derived from
   `--source-base`. Used to ingest a project's own modules into a fresh database.
   (`Main.lean`, `DocGen4/DB.lean`)
+- **`docs` facets emit the trimmed site** — `lake build MyLib:docs` runs
+  `ingest` over the local modules in the import closure of the library's roots
+  and `fromDb` over them, without core; upstream's full build is `fullDocs`.
+  The configuration is the environment of the `lake build` (the variables
+  above). (`lakefile.lean`)
 - **Dependency atlas** — every declaration page gets `deps` (statement closure)
   and `used by` (dependents) panels, and the site gets an `atlas.html` page with
   whole-library views. The data is extracted during analysis and written to
@@ -43,7 +48,7 @@ With none of the three `DOCGEN_*` link variables set, the emitted pages and
 links are those of upstream, with two exceptions: the dependency atlas is
 added, and a few references that upstream would emit as dead links (such as
 abbreviated `Path/To/Module.lean` mentions in docstrings) render as plain
-text (see "Link hygiene" in `TIMAEUS.md`).
+text (see "Links" in `TIMAEUS.md`).
 To move to a new upstream release: `git fetch upstream --tags`, create
 `timaeus/v4.<x>.<y>` from the tag `v4.<x>.<y>`, and merge the previous fork
 branch into it.
