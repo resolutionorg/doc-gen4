@@ -16,6 +16,8 @@ Fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4) at tag
 * **Non-incremental builds.** A library's modules are ingested in one
   environment load and re-emitted together; upstream's per-module
   incrementality is given up for faster clean builds.
+* **Citations with a locator.** Docstring citations like `[KEY, locator]` are
+  recognized as references to KEY that include locator when formatted.
 
 Branches are named `resolution/v4.<x>.<y>` after the upstream tag they are based
 on. Require the branch, or a commit on it, matching the project's toolchain.

@@ -108,6 +108,22 @@ def extendLink (s : String)  : HtmlM String := do
     return s
   else return ((← getRoot) ++ s)
 
+/-- The citation key of a bracketed citation `[KEY]` or `[KEY, locator]`: the text before the
+first comma, trimmed. -/
+def citationKey (label : String) : String :=
+  (label.splitOn ",").head!.trimAscii.copy
+
+/-- The locator of a bracketed citation `[KEY, locator]`, or `none` for `[KEY]` citations -/
+def citationLocator? (citekey label : String) : Option String :=
+  match label.splitOn "," with
+  | key :: _ :: _ =>
+    if key.trimAscii == citekey then
+      let locator := (label.drop (key.length + 1)).trimAscii.copy
+      if locator.isEmpty then none else some locator
+    else
+      none
+  | _ => none
+
 /-- Find a bibitem if `href` starts with `thePrefix`. -/
 def findBibitem? (href : String) (thePrefix : String := "") : HtmlM (Option BibItem) := do
   if href.startsWith thePrefix then
@@ -236,13 +252,21 @@ partial def renderText (t : MD4Lean.Text) (funName : String) (inLink : Bool := f
     | .some bibitem =>
       let newBackref ← addBackref bibitem.citekey funName
       let childrenHtml ← renderTexts children funName (inLink := true)
-      let changeName : Bool :=
-        if let #[.normal s] := children then
-          s == bibitem.citekey
-        else
-          false
+      -- A bare `[KEY]` prints as the bibliography tag; `[KEY, locator]` prints as the tag with the
+      -- locator inside its brackets: `[Kol07, Definition 29]` with the tag `[Kol07]` stays
+      -- `[Kol07, Definition 29]`, and with a regenerated tag `[Kol07a]` becomes `[Kol07a, Definition 29]`.
       let newChildren : Array Html :=
-        if changeName then #[Html.text bibitem.tag] else childrenHtml
+        if let #[.normal s] := children then
+          if s == bibitem.citekey then
+            #[Html.text bibitem.tag]
+          else if let some locator := citationLocator? bibitem.citekey s then
+            -- the tag `[Kol07]` without its brackets
+            let tagBody := (bibitem.tag.dropPrefix "[").dropSuffix "]"
+            #[Html.text s!"[{tagBody}, {locator}]"]
+          else
+            childrenHtml
+        else
+          childrenHtml
       let mut attrs : Array (String × String) := #[("href", extHref)]
       attrs := attrs.push ("title", bibitem.plaintext)
       attrs := attrs.push ("id", s!"_backref_{newBackref.index}")
@@ -370,16 +394,18 @@ partial def renderLi (li : MD4Lean.Li MD4Lean.Block) (funName : String) (tight :
 
 end
 
-/-- Find all references in a markdown text. -/
+/-- Find all references in a markdown text: the labels `[KEY]` and `[KEY, locator]` whose `KEY`
+is a citation key, each with its key. -/
 partial def findAllReferences (refsMap : Std.HashMap String BibItem) (s : String) (i : s.Pos := s.startPos)
-    (ret : Std.HashSet String := ∅) : Std.HashSet String :=
+    (ret : Std.HashMap String String := ∅) : Std.HashMap String String :=
   let lps := i.find '['
   if hs : lps ≠ s.endPos then
     let lpe := lps.find ']'
     if lpe ≠ s.endPos then
-      let citekey := s.extract (lps.next hs) lpe
+      let label := s.extract (lps.next hs) lpe
+      let citekey := citationKey label
       match refsMap[citekey]? with
-      | .some _ => findAllReferences refsMap s lpe (ret.insert citekey)
+      | .some _ => findAllReferences refsMap s lpe (ret.insert label citekey)
       | .none => findAllReferences refsMap s lpe ret
     else
       ret
@@ -394,8 +420,8 @@ def docStringToHtml (docString : String ⊕ (VersoDocString × String)) (funName
     -- TODO: natively render Verso docstrings
     | .inr (_, md) => md
   let refsMarkdown := "\n\n" ++ (String.join <|
-    (findAllReferences (← read).refsMap docString).toList.map fun s =>
-      s!"[{s}]: references.html#ref_{s}\n")
+    (findAllReferences (← read).refsMap docString).toList.map fun (label, citekey) =>
+      s!"[{label}]: references.html#ref_{citekey}\n")
   let flags := MD4Lean.MD_DIALECT_GITHUB ||| MD4Lean.MD_FLAG_LATEXMATHSPANS ||| MD4Lean.MD_FLAG_NOHTML
   match MD4Lean.parse (docString ++ refsMarkdown) flags with
   | .some doc =>
