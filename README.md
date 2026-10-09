@@ -1,7 +1,7 @@
 # `doc-gen4` (Resolution fork)
 Document Generator for Lean 4
 
-> **This is a fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.33.1` (upstream commit `e2af49a`; originally forked at `v4.29.0`).**
+> **This is a fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4), based at tag `v4.34.0` (upstream commit `a6521b2`; originally forked at `v4.29.0`).**
 > It lets a Mathlib-importing project publish documentation for its own modules
 > only, with references to Mathlib and core linked out to the hosted Mathlib
 > documentation (no local Mathlib database), and it adds declaration-level

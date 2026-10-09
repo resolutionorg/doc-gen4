@@ -1,7 +1,7 @@
 # doc-gen4 (Resolution fork)
 
 Fork of [`leanprover/doc-gen4`](https://github.com/leanprover/doc-gen4) at tag
-`v4.33.1` with these changes:
+`v4.34.0` with these changes:
 
 * **Trimmed sites.** A project on Mathlib documents its own modules only;
   references to Mathlib and core link out to the hosted `mathlib4_docs`.
